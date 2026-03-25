@@ -2,22 +2,35 @@
 <html>
   <head>
     <meta charset="UTF-8" />
-    <meta
+    <link rel="stylesheet" href="./ui.css" />
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://unpkg.com/howler@2.2.4/dist/howler.min.js"></script>
+    <script src="https://unpkg.com/jsmediatags@3.9.7/dist/jsmediatags.min.js"></script>
+    <!-- <meta
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self'"
     />
     <meta
       http-equiv="X-Content-Security-Policy"
       content="default-src 'self'; script-src 'self'"
-    />
+    /> -->
+    
     <title>BlueberryPlayer</title>
   </head>
   <body>
     <h1>first start of BlueberryPlayer</h1>
 
-    <img src="./assets/music-placeholder.png" alt="placeholder" object-fit="cover" width="200" height="200" />
+    <img id="coverImage" src="./assets/music-placeholder.png" alt="Album cover"/>
+    <h2 id="trackTitle">No track selected</h2>
+    <p id="trackArtist">Select a file to start playing</p>
 
     <button id="selectFile">Select File</button>
+    <div>
+      <button id="volumeBtn" class="volume-btn">
+      <i data-lucide="volume-2"></i>
+      <input type="range" id="volumeSlider" min="0" max="100" value="50" />
+    </button>
+    </div>
     <script src="./script.js"></script>
   </body>
   

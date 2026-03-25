@@ -1,4 +1,5 @@
 const path = require('path')
+const fs = require('fs')
 const { app, BrowserWindow, ipcMain, dialog } = require('electron')
 
 const createWindow = () => {
@@ -41,4 +42,14 @@ ipcMain.handle('dialog:openAudioFile', async () => {
   }
 
   return result.filePaths[0]
+})
+
+ipcMain.handle('file:readAudioFile', async (event, filePath) => {
+  try {
+    const data = await fs.promises.readFile(filePath)
+    return Array.from(data)
+  } catch (error) {
+    console.error('Failed to read file:', error)
+    return null
+  }
 })
