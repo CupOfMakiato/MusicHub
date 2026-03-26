@@ -9,28 +9,25 @@
     <!-- <meta
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self'"
-    />
+    /> -->
     <meta
       http-equiv="X-Content-Security-Policy"
       content="default-src 'self'; script-src 'self'"
-    /> -->
+    />
     
-    <title>BlueberryPlayer</title>
+    <title>Blueberry Player</title>
   </head>
   <body>
-    <h1>first start of BlueberryPlayer</h1>
+    <!-- <h1>first start of BlueberryPlayer</h1> -->
 
-    <img id="coverImage" src="./assets/music-placeholder.png" alt="Album cover"/>
+    <div id="sidebar"></div> 
+    <img id="coverImage" src="./assets/music-placeholder.png" alt="Album cover" draggable="false"/>
     <h2 id="trackTitle">No track selected</h2>
     <p id="trackArtist">Select a file to start playing</p>
 
     <button id="selectFile">Select File</button>
-    <div>
-      <button id="volumeBtn" class="volume-btn">
-      <i data-lucide="volume-2"></i>
-      <input type="range" id="volumeSlider" min="0" max="100" value="50" />
-    </button>
-    </div>
+    <button id="selectFolder">Select Folder</button>
+    <div id="bottom-player"></div>
     <script src="./script.js"></script>
   </body>
   

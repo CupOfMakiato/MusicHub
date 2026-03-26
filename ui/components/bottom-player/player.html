@@ -1,0 +1,68 @@
+<div class="bottomPlayer">
+  <div class="playerLeft">
+
+    <img
+      id="albumArt"
+      src="./assets/music-placeholder.png"
+      class="albumArt"
+    />
+
+    <div class="trackInfo">
+      <div id="trackTitle">
+        No song selected
+      </div>
+
+      <div id="trackArtist">
+        Unknown artist
+      </div>
+    </div>
+
+  </div>
+  <div class="playerCenter">
+
+    <button id="prevBtn">
+      <i data-lucide="skip-back"></i>
+    </button>
+
+    <button id="playPauseBtn">
+      <i data-lucide="play"></i>
+    </button>
+
+    <button id="nextBtn">
+      <i data-lucide="skip-forward"></i>
+    </button>
+
+    <span id="currentTime">
+      0:00
+    </span>
+
+    <input
+      type="range"
+      id="progressSlider"
+      min="0"
+      max="100"
+      value="0"
+    />
+
+    <span id="duration">
+      2:00
+    </span>
+
+  </div>
+  <div class="playerRight">
+
+    <button id="volumeBtn">
+      <i data-lucide="volume-2"></i>
+    </button>
+
+    <input
+      type="range"
+      id="volumeSlider"
+      min="0"
+      max="100"
+      value="50"
+    />
+
+  </div>
+
+</div>

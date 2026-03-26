@@ -1,6 +1,7 @@
 const path = require('path')
 const fs = require('fs')
 const { app, BrowserWindow, ipcMain, dialog } = require('electron')
+const AUDIO_EXTENSIONS = new Set(['.mp3', '.wav'])
 
 const createWindow = () => {
   const win = new BrowserWindow({
@@ -43,6 +44,47 @@ ipcMain.handle('dialog:openAudioFile', async () => {
 
   return result.filePaths[0]
 })
+
+ipcMain.handle('dialog:openFolder', async () => {
+  const result = await dialog.showOpenDialog({
+    properties: ['openDirectory'],
+  })
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return null
+  }
+
+  return result.filePaths[0]
+})
+
+ipcMain.handle('folder:getAudioFiles', async (event, folderPath) => {
+  try {
+    const entries = await fs.promises.readdir(folderPath, { withFileTypes: true })
+    const audioPaths = entries
+      .filter((entry) => entry.isFile())
+      .map((entry) => path.join(folderPath, entry.name))
+      .filter((filePath) => AUDIO_EXTENSIONS.has(path.extname(filePath).toLowerCase()))
+    const filesWithDates = await Promise.all(
+      audioPaths.map(async (filePath) => {
+        const stats = await fs.promises.stat(filePath)
+        return {
+          filePath,
+          createdAt: stats.birthtimeMs,
+        }
+      })
+    )
+
+    const files = filesWithDates
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .map((item) => item.filePath)
+
+    return files
+  } catch (error) {
+    console.error('Failed to read folder audio files:', error)
+    return []
+  }
+})
+
 
 ipcMain.handle('file:readAudioFile', async (event, filePath) => {
   try {

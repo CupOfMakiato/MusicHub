@@ -1,9 +1,42 @@
 const selectFileButton = document.getElementById('selectFile')
+const openFolderButton = document.getElementById('selectFolder')
 const coverImage = document.getElementById('coverImage')
 const trackTitle = document.getElementById('trackTitle')
 const trackArtist = document.getElementById('trackArtist')
 const placeholderCover = './assets/music-placeholder.png'
 let music = null
+let playlist = []
+let currentTrackIndex = -1
+
+async function loadComponent(
+  elementId,
+  filePath
+) {
+  const response = await fetch(filePath);
+
+  const html = await response.text();
+
+  document.getElementById(
+    elementId
+  ).innerHTML = html;
+  
+  window.lucide?.createIcons();
+}
+
+function initUI() {
+    loadComponent(
+    "sidebar",
+    "./components/sidebar/sidebar.html"
+  );
+
+    loadComponent(
+    "bottom-player",
+    "./components/bottom-player/player.html"
+  );
+}
+
+initUI();
+
 
 function toFileUrl(filePath) {
     if (!filePath) return null
@@ -86,9 +119,11 @@ function readMetadata(filePath, fallbackTitle) {
 
             window.jsmediatags.read(blob, {
                 onSuccess: (tag) => {
+                    const album = tag.tags.album || 'Unknown Album'
                     const title = tag.tags.title || fallbackTitle || 'Unknown Title'
                     const artist = tag.tags.artist || 'Unknown Artist'
                     const musicImage = getPictureDataUrl(tag.tags.picture)
+                    
 
                     updateTrackInfo({
                         title,
@@ -96,9 +131,9 @@ function readMetadata(filePath, fallbackTitle) {
                         image: musicImage,
                     })
 
-                    console.log('Title:', title)
-                    console.log('Artist:', artist)
-                    console.log('Music Image:', musicImage)
+                    // console.log('Title:', title)
+                    // console.log('Artist:', artist)
+                    // console.log('Music Image:', musicImage)
                 },
                 onError: (error) => {
                     console.warn('Metadata not available for this file:', error)
@@ -120,6 +155,64 @@ function readMetadata(filePath, fallbackTitle) {
     })()
 }
 
+function clearCurrentMusic() {
+    if (!music) return
+    music.stop()
+    music.unload()
+    music = null
+}
+
+function playNextInQueue() {
+    const nextIndex = currentTrackIndex + 1
+    if (nextIndex >= playlist.length) {
+        return
+    }
+
+    playTrackAtIndex(nextIndex)
+}
+
+function playTrackAtIndex(index) {
+    if (!Array.isArray(playlist) || playlist.length === 0) {
+        return
+    }
+
+    if (index < 0 || index >= playlist.length) {
+        return
+    }
+
+    const selectedFile = playlist[index]
+    const sourceFile = toFileUrl(selectedFile)
+    const fallbackTitle = getFileName(selectedFile)
+
+    currentTrackIndex = index
+    updateTrackInfo({
+        title: fallbackTitle,
+        artist: 'Loading metadata...',
+        image: null,
+    })
+    readMetadata(selectedFile, fallbackTitle)
+
+    clearCurrentMusic()
+
+    music = new window.Howl({
+        src: [sourceFile],
+        html5: true,
+        volume: 0.5,
+        onend: playNextInQueue,
+    })
+
+    music.play()
+}
+
+function startPlaylist(filePaths) {
+    if (!Array.isArray(filePaths) || filePaths.length === 0) {
+        return
+    }
+
+    playlist = filePaths
+    playTrackAtIndex(0)
+}
+
 selectFileButton?.addEventListener('click', async () => {
     try {
         const selectedFile = await window.electronAPI.selectAudioFile()
@@ -129,31 +222,38 @@ selectFileButton?.addEventListener('click', async () => {
             return
         }
 
-        const sourceFile = toFileUrl(selectedFile)
-        const fallbackTitle = getFileName(selectedFile)
-        console.log('Selected file:', sourceFile)
-        updateTrackInfo({
-            title: fallbackTitle,
-            artist: 'Loading metadata...',
-            image: null,
-        })
-        readMetadata(selectedFile, fallbackTitle)
-
-        if (music) {
-            music.stop()
-            music.unload()
-        }
-
-        music = new window.Howl({
-            src: [sourceFile],
-            html5: true,
-            volume: 0.5,
-        })
-
-        music.play()
+        startPlaylist([selectedFile])
     } catch (error) {
         console.error('Failed to select or play audio file:', error)
     }
 })
 
-window.lucide?.createIcons()
+openFolderButton?.addEventListener('click', async () => {
+    try {
+        const selectedFolder = await window.electronAPI.openFolder()
+
+        if (!selectedFolder) {
+            console.log('No folder selected')
+            return
+        }
+
+        const files = await window.electronAPI.getAudioFilesInFolder(selectedFolder)
+
+        if (!Array.isArray(files) || files.length === 0) {
+            updateTrackInfo({
+                title: 'No audio files found',
+                artist: 'Select another folder',
+                image: null,
+            })
+            clearCurrentMusic()
+            playlist = []
+            currentTrackIndex = -1
+            return
+        }
+
+        startPlaylist(files)
+    } catch (error) {
+        console.error('Failed to open folder or play playlist:', error)
+    }
+})
+
