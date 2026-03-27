@@ -1,4 +1,4 @@
-<div class="bottomPlayer">
+<div id="bottom-player" class="bottomPlayer">
   <div class="playerLeft">
 
     <img
@@ -21,16 +21,16 @@
   </div>
   <div class="playerCenter">
 
-    <button id="prevBtn">
+    <button id="prevBtn" type="button" aria-label="Previous track">
       <i data-lucide="skip-back"></i>
     </button>
 
-    <button id="playPauseBtn">
+    <button id="playPauseBtn" type="button" aria-label="Play/Pause">
       <!-- <i data-lucide="pause"></i> -->
       <i data-lucide="play"></i>
     </button>
 
-    <button id="nextBtn">
+    <button id="nextBtn" type="button" aria-label="Next track">
       <i data-lucide="skip-forward"></i>
     </button>
 
@@ -50,6 +50,19 @@
       2:00
     </span>
 
+    
+
+  </div>
+  <div class="playerRight">
+
+    <button id="volumeBtn">
+      <!-- state -->
+      <!-- <i data-lucide="volume-x"></i> -->
+      <!-- <i data-lucide="volume"></i> -->
+      <!-- <i data-lucide="volume-1"></i> -->    
+      <i data-lucide="volume-2"></i>
+    </button>
+
     <input
       type="range"
       id="volumeSlider"
@@ -58,8 +71,11 @@
       step="0.01"
       value="0.7"
     />
-
   </div>
-  <div class="playerRight"></div>
 
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        window.initializePlayer();
+    });
+</script>
 </div>

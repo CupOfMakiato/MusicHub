@@ -1,3 +1,24 @@
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        //fetch player html
+        const response = await fetch('./components/bottom-player/player.html');
+        const htmlText = await response.text();
+
+        //put player in index.html
+        const bottomPlayerDiv = document.getElementById('bottom-player');
+        bottomPlayerDiv.innerHTML = htmlText;
+        //render lucide icons
+        if (window.lucide) {
+            window.lucide.createIcons();
+        }
+        // initializePlayer
+        window.initializePlayer();
+        
+    } catch (error) {
+        console.error('Failed to load the bottom player component:', error);
+    }
+});
+
 const selectFileButton = document.getElementById('selectFile')
 const openFolderButton = document.getElementById('selectFolder')
 const coverImage = document.getElementById('coverImage')

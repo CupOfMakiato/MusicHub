@@ -151,5 +151,4 @@ function initializePlayer() {
     startStateSync();
     console.log('Player setup complete');
 }
-console.log('Initializing player setup...');
-setTimeout(initializePlayer, 100); // Use a timeout to ensure player.html is loaded
+window.initializePlayer = initializePlayer;

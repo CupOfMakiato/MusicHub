@@ -8,7 +8,8 @@ window.audioService = (() => {
 	function toFileUrl(filePath) {
 		if (!filePath) return null
 		const normalizedPath = filePath.replace(/\\/g, '/')
-		return encodeURI(`file://${normalizedPath}`)
+		const needsLeadingSlash = /^[A-Za-z]:\//.test(normalizedPath)
+		return encodeURI(`file://${needsLeadingSlash ? '/' : ''}${normalizedPath}`)
 	}
 
 	function arrayBufferToBase64(data) {
@@ -239,5 +240,6 @@ window.audioService = (() => {
 		},
 		setVolume,
 		getCurrentSound,
+		clearCurrentMusic,
 	}
 })()
