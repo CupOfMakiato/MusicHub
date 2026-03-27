@@ -8,6 +8,7 @@ window.playerState = (() => {
 			duration: 0,
 			percent: 0,
 		},
+		volume: 0.7,
 		currentTrack: {
 			filePath: null,
 			title: 'No song selected',
@@ -31,10 +32,20 @@ window.playerState = (() => {
         notify() //trigger at pause/play
     }
 
-    function setCurrentTrack(track) {
-        state.currentTrack = { ...state.currentTrack, ...track }
+    function setProgress(progress) {
+        state.progress = { ...state.progress, ...progress }
         notify()
     }
+
+	function setVolume(volume) {
+		state.volume = volume
+		notify()
+	}
+
+	function setCurrentTrack(track) {
+		state.currentTrack = { ...state.currentTrack, ...track }
+		notify()
+	}
 
 	function setPlaylist(filePaths) {
 		state.playlist = Array.isArray(filePaths) ? [...filePaths] : []
@@ -43,14 +54,6 @@ window.playerState = (() => {
 
 	function setCurrentTrackIndex(index) {
 		state.currentTrackIndex = Number.isInteger(index) ? index : -1
-        notify();
-	}
-
-	function setProgress(progress) {
-		state.progress = {
-			...state.progress,
-			...progress,
-		}
         notify();
 	}
 
@@ -75,6 +78,9 @@ window.playerState = (() => {
 		setIsPlaying,
 		setProgress,
 		setCurrentTrack,
+		setPlaylist,
+		setCurrentTrackIndex,
+		setVolume,
 		reset,
         subscribe,
 	}

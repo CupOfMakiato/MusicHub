@@ -3,6 +3,7 @@ window.audioService = (() => {
 	const state = window.playerState
 	let music = null
 	let progressTimer = null
+	let currentSound = null
 
 	function toFileUrl(filePath) {
 		if (!filePath) return null
@@ -134,7 +135,7 @@ window.audioService = (() => {
 		const nextIndex = currentTrackIndex + 1
 		if (nextIndex >= playlist.length) {
 			state.setIsPlaying(false)
-			state.setProgress({ currentTime: 0, percent: 0 })
+			state.setProgress({ currentTime: 0, duration: 0, percent: 0 })
 			return
 		}
 		playTrackAtIndex(nextIndex)
@@ -142,67 +143,42 @@ window.audioService = (() => {
 
 	async function playTrackAtIndex(index) {
 		if (!state) return
-
 		const { playlist } = state.getState()
-		if (!Array.isArray(playlist) || playlist.length === 0) return
 		if (index < 0 || index >= playlist.length) return
 
-		const selectedFile = playlist[index]
-		const sourceFile = toFileUrl(selectedFile)
-		const fallbackTitle = getFileName(selectedFile)
+		const filePath = playlist[index]
+		const trackData = await readMetadata(filePath)
 
 		state.setCurrentTrackIndex(index)
-		state.setCurrentTrack({
-			filePath: selectedFile,
-			title: fallbackTitle,
-			artist: 'Loading metadata...',
-			image: placeholderCover,
-		})
+		state.setCurrentTrack(trackData)
 
-		clearCurrentMusic()
+		if (currentSound) {
+			currentSound.stop()
+		}
 
-		music = new window.Howl({
-			src: [sourceFile],
+		const { volume } = state.getState()
+		console.log('Playing track with volume:', volume)
+
+		currentSound = new Howl({
+			src: [filePath],
 			html5: true,
-			volume: 0.5,
-			onplay: () => {
-				state.setIsPlaying(true)
-				updateProgressSnapshot()
-				startProgressTracking()
-			},
-			onpause: () => {
-				state.setIsPlaying(false)
-			},
-			onstop: () => {
-				state.setIsPlaying(false)
-				stopProgressTracking()
-			},
-			onend: () => {
-				state.setIsPlaying(false)
-				stopProgressTracking()
-				playNextInQueue()
-			},
-			onload: () => {
-				updateProgressSnapshot()
+			volume,
+			onplay: () => state.setIsPlaying(true),
+			onpause: () => state.setIsPlaying(false),
+			onend: () => playNextInQueue(),
+			onseek: () => {
 			},
 		})
 
-		music.play()
-
-		const metadata = await readMetadata(selectedFile, fallbackTitle)
-		state.setCurrentTrack({
-			title: metadata.title,
-			artist: metadata.artist,
-			image: metadata.image || placeholderCover,
-		})
+		currentSound.play()
 	}
 
 	function togglePlayPause() {
-		if (!music) return
-		if (music.playing()) {
-			music.pause()
+		if (!currentSound) return
+		if (currentSound.playing()) {
+			currentSound.pause()
 		} else {
-			music.play()
+			currentSound.play()
 		}
 	}
 
@@ -228,7 +204,7 @@ window.audioService = (() => {
 		playTrackAtIndex(0)
 	}
 
-	function playNext() {
+	async function playNext() {
 		playNextInQueue()
 	}
 
@@ -242,13 +218,14 @@ window.audioService = (() => {
 	}
 
 	function setVolume(volume) {
-		if (music) {
-			music.volume(volume)
+		if (Howler) {
+			Howler.volume(volume)
+			state.setVolume(volume)
 		}
 	}
 
 	function getCurrentSound() {
-		return music
+		return currentSound
 	}
 
 	return {

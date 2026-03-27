@@ -100,15 +100,17 @@ function initializePlayer() {
                 const sound = audioService.getCurrentSound();
                 if (sound) {
                     const duration = sound.duration();
-                    sound.seek((e.target.value / 100) * duration);
+                    const newSeek = (e.target.value / 100) * duration;
+                    sound.seek(newSeek);
                 }
             });
         }
 
         if (volumeSlider) {
             volumeSlider.addEventListener('input', (e) => {
-                const volume = e.target.value / 100;
-                audioService.setVolume(volume);
+                const newVolume = e.target.value;
+                console.log('Volume changed:', newVolume);
+                audioService.setVolume(newVolume);
             });
         }
 
