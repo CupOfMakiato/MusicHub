@@ -24,8 +24,14 @@ window.playerState = (() => {
 
     function subscribe(fn) {
         listeners.push(fn)
-        return () => listeners.splice(listeners.indexOf(fn), 1) // returns unsubscribe
+        return () => {
+            const index = listeners.indexOf(fn)
+            if (index >= 0) {
+            	listeners.splice(index, 1) // returns unsubscribe
+			}
+		} 
     }
+
 
     function setIsPlaying(value) {
         state.isPlaying = Boolean(value)
@@ -78,8 +84,6 @@ window.playerState = (() => {
 		setIsPlaying,
 		setProgress,
 		setCurrentTrack,
-		setPlaylist,
-		setCurrentTrackIndex,
 		setVolume,
 		reset,
         subscribe,
