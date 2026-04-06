@@ -18,8 +18,17 @@ window.playerState = (() => {
 	}
     const listeners = []
 
+	function cloneStateSnapshot() {
+		if (typeof structuredClone === 'function') {
+			return structuredClone(state)
+		}
+
+		return JSON.parse(JSON.stringify(state))
+	}
+
     function notify() {
-        listeners.forEach(fn => fn(state))
+		const snapshot = cloneStateSnapshot()
+		listeners.forEach(fn => fn(snapshot))
     }
 
     function subscribe(fn) {
@@ -78,7 +87,7 @@ window.playerState = (() => {
 	}
 
 	return {
-		getState: () => ({ ...state }),
+		getState: () => cloneStateSnapshot(),
 		setPlaylist,
 		setCurrentTrackIndex,
 		setIsPlaying,

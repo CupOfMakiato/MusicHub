@@ -1,24 +1,3 @@
-document.addEventListener('DOMContentLoaded', async () => {
-    try {
-        //fetch player html
-        const response = await fetch('./components/bottom-player/player.html');
-        const htmlText = await response.text();
-
-        //put player in index.html
-        const bottomPlayerDiv = document.getElementById('bottom-player');
-        bottomPlayerDiv.innerHTML = htmlText;
-        //render lucide icons
-        if (window.lucide) {
-            window.lucide.createIcons();
-        }
-        // initializePlayer
-        window.initializePlayer();
-        
-    } catch (error) {
-        console.error('Failed to load the bottom player component:', error);
-    }
-});
-
 const selectFileButton = document.getElementById('selectFile')
 const openFolderButton = document.getElementById('selectFolder')
 const coverImage = document.getElementById('coverImage')
@@ -28,32 +7,53 @@ const placeholderCover = window.audioService?.placeholderCover || './assets/musi
 
 async function loadComponent(
   elementId,
-  filePath
+  filePath,
+  onLoadCallback = null
 ) {
-  const response = await fetch(filePath);
+    const response = await fetch(filePath)
+    const html = await response.text()
+    const hostElement = document.getElementById(elementId)
 
-  const html = await response.text();
+    if (!hostElement) {
+        console.error(`Component host not found: ${elementId}`)
+        return
+    }
 
-  document.getElementById(
-    elementId
-  ).innerHTML = html;
+    hostElement.innerHTML = html
   
-  window.lucide?.createIcons();
+    window.lucide?.createIcons()
+  
+  if (onLoadCallback && typeof onLoadCallback === 'function') {
+        onLoadCallback()
+  }
 }
 
-function initUI() {
-    loadComponent(
+async function initUI() {
+        await loadComponent(
     "sidebar",
-    "./components/sidebar/sidebar.html"
-  );
+        "./components/sidebar/sidebar.html"
+    )
 
-    loadComponent(
+        await loadComponent(
+    "recent-music",
+        "./components/recent-music/recent-music.html",
+        () => {
+            if (window.InitializeRecentMusic) {
+                        window.InitializeRecentMusic()
+            }
+        }
+    )
+
+        await loadComponent(
     "bottom-player",
-    "./components/bottom-player/player.html"
-  );
+        "./components/bottom-player/player.html",
+        () => {
+            if (window.initializePlayer) {
+                window.initializePlayer()
+            }
+        }
+    )
 }
-
-initUI();
 
 function updateTrackInfoFromState() {
     const currentTrack = playerState?.getState()?.currentTrack || {}
@@ -79,7 +79,38 @@ function startStateSync() {
     window.setInterval(updateTrackInfoFromState, 200)
 }
 
-startStateSync()
+async function restoreSavedPlaylist() {
+    try {
+        if (!window.electronAPI?.loadPlaylist) {
+            console.log('loadPlaylist not available from electronAPI')
+            return
+        }
+
+        const { playlist, currentTrackIndex } = await window.electronAPI.loadPlaylist()
+
+        if (!playlist || playlist.length === 0) {
+            console.log('No saved playlist to restore')
+            return
+        }
+
+        console.log('Restoring saved playlist with', playlist.length, 'tracks')
+        playerState?.setPlaylist(playlist)
+
+        if (currentTrackIndex >= 0 && currentTrackIndex < playlist.length) {
+            audioService?.playTrackAtIndex(currentTrackIndex)
+        }
+    } catch (error) {
+        console.error('Failed to restore saved playlist:', error)
+    }
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+    await initUI()
+    startStateSync()
+
+    // Restore playlist from previous session
+    restoreSavedPlaylist()
+})
 
 selectFileButton?.addEventListener('click', async () => {
     try {

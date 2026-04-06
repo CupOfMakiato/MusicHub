@@ -21,12 +21,13 @@ function initializePlayer() {
     const volumeSlider = bottomPlayer.querySelector('#volumeSlider');
     const volumeBtn = bottomPlayer.querySelector('#volumeBtn');
     const placeholderCover = audioService?.placeholderCover || './assets/music-placeholder.png';
+    let progressRafId = null;
 
     console.log('Player DOM elements found');
 
     function updatePlayerUI() {
         // console.log('updatePlayerUI triggered');
-        const { currentTrack, isPlaying } = playerState.getState();
+        const { currentTrack, isPlaying, volume } = playerState.getState();
         const title = currentTrack?.title || 'No song selected';
         const artist = currentTrack?.artist || 'Unknown artist';
         const image = currentTrack?.image || placeholderCover;
@@ -44,6 +45,10 @@ function initializePlayer() {
                 playPauseBtn.innerHTML = `<i data-lucide="${icon}"></i>`;
             }
             window.lucide.createIcons({ nodes: [playPauseBtn] });
+        }
+
+        if (volumeSlider) {
+            volumeSlider.value = Number.isFinite(Number(volume)) ? Number(volume) : 0.7;
         }
 
         const sound = audioService.getCurrentSound();
@@ -108,7 +113,7 @@ function initializePlayer() {
 
         if (volumeSlider) {
             volumeSlider.addEventListener('input', (e) => {
-                const newVolume = e.target.value;
+                const newVolume = Number(e.target.value);
                 console.log('Volume changed:', newVolume);
                 audioService.setVolume(newVolume);
             });
@@ -130,21 +135,55 @@ function initializePlayer() {
 
     function startStateSync() {
         updatePlayerUI(); // Initial UI update
-        playerState.subscribe(() => updatePlayerUI())
 
-        function updateProgress() {
-            const sound = audioService.getCurrentSound()
-            if (sound && sound.playing()) {
-                const seek = sound.seek() || 0
-                const duration = sound.duration() || 0
-                if (progressSlider) progressSlider.value = (seek / duration) * 100 || 0
-                if (currentTimeElement) currentTimeElement.textContent = formatTime(seek)
-                if (durationElement) durationElement.textContent = formatTime(duration)
+        function stopProgressLoop() {
+            if (progressRafId !== null) {
+                cancelAnimationFrame(progressRafId);
+                progressRafId = null;
             }
-            requestAnimationFrame(updateProgress);
         }
 
-        requestAnimationFrame(updateProgress);
+        function updateProgress() {
+            const sound = audioService.getCurrentSound();
+            if (!sound || !sound.playing()) {
+                stopProgressLoop();
+                return;
+            }
+
+            const seek = sound.seek() || 0;
+            const duration = sound.duration() || 0;
+            if (progressSlider) progressSlider.value = (seek / duration) * 100 || 0;
+            if (currentTimeElement) currentTimeElement.textContent = formatTime(seek);
+            if (durationElement) durationElement.textContent = formatTime(duration);
+
+            progressRafId = requestAnimationFrame(updateProgress);
+        }
+
+        function startProgressLoop() {
+            if (progressRafId !== null) {
+                return;
+            }
+
+            const sound = audioService.getCurrentSound();
+            if (!sound || !sound.playing()) {
+                return;
+            }
+
+            progressRafId = requestAnimationFrame(updateProgress);
+        }
+
+        playerState.subscribe(() => {
+            updatePlayerUI();
+
+            const sound = audioService.getCurrentSound();
+            if (sound && sound.playing()) {
+                startProgressLoop();
+            } else {
+                stopProgressLoop();
+            }
+        });
+
+        startProgressLoop();
     }
 
     setupEventListeners();

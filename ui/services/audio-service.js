@@ -1,9 +1,16 @@
 window.audioService = (() => {
 	const placeholderCover = './assets/music-placeholder.png'
+	const DEFAULT_VOLUME = 0.7
 	const state = window.playerState
 	let music = null
 	let progressTimer = null
 	let currentSound = null
+
+	function normalizeVolume(value) {
+		const parsed = Number(value)
+		if (!Number.isFinite(parsed)) return DEFAULT_VOLUME
+		return Math.max(0, Math.min(1, parsed))
+	}
 
 	function toFileUrl(filePath) {
 		if (!filePath) return null
@@ -135,6 +142,11 @@ window.audioService = (() => {
 		const { currentTrackIndex, playlist } = state.getState()
 		const nextIndex = currentTrackIndex + 1
 		if (nextIndex >= playlist.length) {
+			if (currentSound) {
+				currentSound.stop()
+				currentSound.unload()
+				currentSound = null
+			}
 			state.setIsPlaying(false)
 			state.setProgress({ currentTime: 0, duration: 0, percent: 0 })
 			return
@@ -152,6 +164,35 @@ window.audioService = (() => {
 
 		state.setCurrentTrackIndex(index)
 		state.setCurrentTrack(trackData)
+
+		// Save current track index and playlist
+		if (window.electronAPI?.savePlaylist) {
+			window.electronAPI.savePlaylist(playlist, index).catch((error) => {
+				console.error('Failed to persist playlist index:', error)
+			})
+		}
+
+		// Add to recent tracks
+		if (window.electronAPI?.saveRecentTracks) {
+			const recentTrack = {
+				filePath,
+				title: trackData.title,
+				artist: trackData.artist,
+				image: trackData.image,
+				playedAt: new Date().toISOString(),
+			}
+			// Fetch existing recent tracks and add this one
+			window.electronAPI.loadRecentTracks()
+				.then((recent) => {
+					const updated = [recentTrack, ...recent].filter((item, index, self) =>
+						index === self.findIndex((t) => t.filePath === item.filePath)
+					)
+					return window.electronAPI.saveRecentTracks(updated)
+				})
+				.catch((error) => {
+					console.error('Failed to update recent tracks:', error)
+				})
+		}
 
 		if (currentSound) {
 			currentSound.stop()
@@ -202,6 +243,14 @@ window.audioService = (() => {
 		if (!state) return
 		if (!Array.isArray(filePaths) || filePaths.length === 0) return
 		state.setPlaylist(filePaths)
+		
+		// Save playlist for next session
+		if (window.electronAPI?.savePlaylist) {
+			window.electronAPI.savePlaylist(filePaths, 0).catch((error) => {
+				console.error('Failed to persist playlist:', error)
+			})
+		}
+		
 		playTrackAtIndex(0)
 	}
 
@@ -219,11 +268,35 @@ window.audioService = (() => {
 	}
 
 	function setVolume(volume) {
+		const normalizedVolume = normalizeVolume(volume)
 		if (Howler) {
-			Howler.volume(volume)
-			state.setVolume(volume)
+			Howler.volume(normalizedVolume)
+		}
+		state.setVolume(normalizedVolume)
+
+		if (window.electronAPI?.saveVolume) {
+			window.electronAPI.saveVolume(normalizedVolume).catch((error) => {
+				console.error('Failed to persist volume:', error)
+			})
 		}
 	}
+
+	async function initializeVolumeFromStore() {
+		if (!window.electronAPI?.getSavedVolume) {
+			setVolume(DEFAULT_VOLUME)
+			return
+		}
+
+		try {
+			const savedVolume = await window.electronAPI.getSavedVolume()
+			setVolume(savedVolume)
+		} catch (error) {
+			console.error('Failed to load saved volume:', error)
+			setVolume(DEFAULT_VOLUME)
+		}
+	}
+
+	initializeVolumeFromStore()
 
 	function getCurrentSound() {
 		return currentSound

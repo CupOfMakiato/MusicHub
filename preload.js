@@ -5,4 +5,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openFolder: () => ipcRenderer.invoke('dialog:openFolder'),
   getAudioFilesInFolder: (folderPath) => ipcRenderer.invoke('folder:getAudioFiles', folderPath),
   readAudioFile: (filePath) => ipcRenderer.invoke('file:readAudioFile', filePath),
+  getSavedVolume: () => ipcRenderer.invoke('settings:getVolume'),
+  saveVolume: (volume) => ipcRenderer.invoke('settings:setVolume', volume),
+  savePlaylist: (playlist, currentTrackIndex) => ipcRenderer.invoke('playlist:save', { playlist, currentTrackIndex }),
+  loadPlaylist: () => ipcRenderer.invoke('playlist:load'),
+  saveRecentTracks: (tracks) => ipcRenderer.invoke('recent-tracks:save', tracks),
+  loadRecentTracks: () => ipcRenderer.invoke('recent-tracks:load'),
 })

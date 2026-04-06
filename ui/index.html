@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="stylesheet" href="./ui.css" />
+    <link rel="stylesheet" href="./components/recent-music/recent-music.css" />
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://unpkg.com/howler@2.2.4/dist/howler.min.js"></script>
     <script src="https://unpkg.com/jsmediatags@3.9.7/dist/jsmediatags.min.js"></script>
@@ -21,6 +22,7 @@
     <!-- <h1>first start of BlueberryPlayer</h1> -->
 
     <div id="sidebar"></div> 
+    <div id="recent-music"></div>
     <img id="coverImage" src="./assets/music-placeholder.png" alt="Album cover" draggable="false"/>
     <h2 id="trackTitle">No track selected</h2>
     <p id="trackArtist">Select a file to start playing</p>
@@ -30,6 +32,7 @@
     <div id="bottom-player"></div>
     <script src="./state/player-state.js"></script>
     <script src="./services/audio-service.js"></script>
+    <script src="./components/recent-music/recent-music.js"></script>
     <script src="./components/bottom-player/player.js"></script>
     <script src="./script.js"></script>
   </body>
