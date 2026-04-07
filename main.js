@@ -7,6 +7,22 @@ const DEFAULT_VOLUME = 0.7
 let settingsStore = null
 const allowedAudioPaths = new Set()
 
+function getAppIconPath() {
+  const iconCandidates = [
+    // path.join(__dirname, 'ui', 'assets', 'paw-print-svgrepo-com.png'),
+    path.join(__dirname, 'ui', 'assets', 'IMG_4980.PNG'),
+    // path.join(__dirname, 'build-assets', 'IMG_4980.PNG'),
+  ]
+
+  for (const iconPath of iconCandidates) {
+    if (fs.existsSync(iconPath)) {
+      return iconPath
+    }
+  }
+
+  return undefined
+}
+
 function normalizeFilePath(filePath) {
   if (typeof filePath !== 'string' || filePath.trim() === '') return null
   const resolvedPath = path.resolve(filePath)
@@ -33,9 +49,11 @@ function normalizeVolume(value) {
 }
 
 const createWindow = () => {
+  const appIcon = getAppIconPath()
   const win = new BrowserWindow({
     width: 800,
     height: 600,
+    icon: appIcon,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -52,6 +70,10 @@ const createWindow = () => {
 }
 
 app.on('ready', () => {
+  if (process.platform === 'win32') {
+    app.setAppUserModelId('com.makiato.musichub')
+  }
+
   createWindow()
 });
 
