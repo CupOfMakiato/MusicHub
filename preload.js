@@ -11,4 +11,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
   loadPlaylist: () => ipcRenderer.invoke('playlist:load'),
   saveRecentTracks: (tracks) => ipcRenderer.invoke('recent-tracks:save', tracks),
   loadRecentTracks: () => ipcRenderer.invoke('recent-tracks:load'),
+  approveRecentAudioPath: (filePath) => ipcRenderer.invoke('file:approveRecentAudioPath', filePath),
 })

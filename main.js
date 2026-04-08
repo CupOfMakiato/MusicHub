@@ -6,6 +6,7 @@ const MAX_AUDIO_FILE_BYTES = Number(process.env.MAX_AUDIO_FILE_BYTES || 50 * 102
 const DEFAULT_VOLUME = 0.7
 let settingsStore = null
 const allowedAudioPaths = new Set()
+const approvedAudioDirectories = new Set()
 let memoryLogInterval = null
 
 app.disableHardwareAcceleration()
@@ -37,6 +38,40 @@ function markPathAsAllowed(filePath) {
   if (normalized) {
     allowedAudioPaths.add(normalized)
   }
+}
+
+function persistApprovedPaths() {
+  if (!settingsStore) {
+    return
+  }
+
+  settingsStore.set('approvedAudioPaths', Array.from(allowedAudioPaths))
+  settingsStore.set('approvedAudioDirectories', Array.from(approvedAudioDirectories))
+}
+
+function markDirectoryAsApproved(directoryPath) {
+  const normalized = normalizeFilePath(directoryPath)
+  if (normalized) {
+    approvedAudioDirectories.add(normalized)
+    persistApprovedPaths()
+  }
+}
+
+function isPathUnderApprovedDirectory(filePath) {
+  const normalizedFilePath = normalizeFilePath(filePath)
+  if (!normalizedFilePath) return false
+
+  for (const approvedDirectory of approvedAudioDirectories) {
+    if (normalizedFilePath === approvedDirectory) {
+      return true
+    }
+
+    if (normalizedFilePath.startsWith(`${approvedDirectory}${path.sep}`)) {
+      return true
+    }
+  }
+
+  return false
 }
 
 function isAllowedAudioPath(filePath) {
@@ -95,8 +130,20 @@ app.whenReady().then(async () => {
       recentPlaylistIndex: -1,
       recentPlaybackPosition: 0,
       recentTracks: [],
+      approvedAudioPaths: [],
+      approvedAudioDirectories: [],
     },
   })
+
+  const storedApprovedPaths = settingsStore.get('approvedAudioPaths', [])
+  if (Array.isArray(storedApprovedPaths)) {
+    storedApprovedPaths.forEach((filePath) => markPathAsAllowed(filePath))
+  }
+
+  const storedApprovedDirectories = settingsStore.get('approvedAudioDirectories', [])
+  if (Array.isArray(storedApprovedDirectories)) {
+    storedApprovedDirectories.forEach((directoryPath) => markDirectoryAsApproved(directoryPath))
+  }
 
   createWindow()
 
@@ -140,6 +187,7 @@ ipcMain.handle('dialog:openAudioFile', async () => {
   }
 
   markPathAsAllowed(result.filePaths[0])
+  persistApprovedPaths()
 
   return result.filePaths[0]
 })
@@ -153,11 +201,19 @@ ipcMain.handle('dialog:openFolder', async () => {
     return null
   }
 
+  markDirectoryAsApproved(result.filePaths[0])
+  persistApprovedPaths()
+
   return result.filePaths[0]
 })
 
 ipcMain.handle('folder:getAudioFiles', async (event, folderPath) => {
   try {
+    if (!isPathUnderApprovedDirectory(folderPath)) {
+      console.warn('Blocked folder:getAudioFiles for non-approved folder:', folderPath)
+      return []
+    }
+
     const entries = await fs.promises.readdir(folderPath, { withFileTypes: true })
     const audioPaths = entries
       .filter((entry) => entry.isFile())
@@ -177,7 +233,13 @@ ipcMain.handle('folder:getAudioFiles', async (event, folderPath) => {
       .sort((a, b) => b.createdAt - a.createdAt)
       .map((item) => item.filePath)
 
-    files.forEach((filePath) => markPathAsAllowed(filePath))
+    files.forEach((filePath) => {
+      if (isPathUnderApprovedDirectory(filePath)) {
+        markPathAsAllowed(filePath)
+      }
+    })
+
+    persistApprovedPaths()
 
     return files
   } catch (error) {
@@ -211,9 +273,17 @@ ipcMain.handle('playlist:save', async (event, { playlist, currentTrackIndex, pla
   }
 
   try {
-    settingsStore.set('recentPlaylist', playlist || [])
-    settingsStore.set('recentPlaylistIndex', currentTrackIndex ?? -1)
-    settingsStore.set('recentPlaybackPosition', normalizePlaybackPosition(playbackPosition))
+    const approvedPlaylist = Array.isArray(playlist) ? playlist.filter((filePath) => isAllowedAudioPath(filePath)) : []
+    const currentTrackPath = Array.isArray(playlist) && Number.isInteger(currentTrackIndex)
+      ? playlist[currentTrackIndex]
+      : null
+    const approvedCurrentTrackIndex = currentTrackPath && isAllowedAudioPath(currentTrackPath)
+      ? approvedPlaylist.indexOf(currentTrackPath)
+      : -1
+
+    settingsStore.set('recentPlaylist', approvedPlaylist)
+    settingsStore.set('recentPlaylistIndex', approvedCurrentTrackIndex)
+    settingsStore.set('recentPlaybackPosition', approvedCurrentTrackIndex >= 0 ? normalizePlaybackPosition(playbackPosition) : 0)
     return true
   } catch (error) {
     console.error('Failed to save playlist:', error)
@@ -230,12 +300,7 @@ ipcMain.handle('playlist:load', async () => {
     const playlist = settingsStore.get('recentPlaylist', [])
     const currentTrackIndex = settingsStore.get('recentPlaylistIndex', -1)
     const playbackPosition = normalizePlaybackPosition(settingsStore.get('recentPlaybackPosition', 0))
-    
-    // Mark all restored playlist paths as allowed for reading
-    if (Array.isArray(playlist)) {
-      playlist.forEach((filePath) => markPathAsAllowed(filePath))
-    }
-    
+
     return { playlist, currentTrackIndex, playbackPosition }
   } catch (error) {
     console.error('Failed to load playlist:', error)
@@ -249,8 +314,10 @@ ipcMain.handle('recent-tracks:save', async (event, tracks) => {
   }
 
   try {
-    const maxRecent = 20
-    const recentTracks = Array.isArray(tracks) ? tracks.slice(0, maxRecent) : []
+    const maxRecent = 10
+    const recentTracks = Array.isArray(tracks)
+      ? tracks.filter((track) => track && isAllowedAudioPath(track.filePath)).slice(0, maxRecent)
+      : []
     settingsStore.set('recentTracks', recentTracks)
     return true
   } catch (error) {
@@ -266,16 +333,7 @@ ipcMain.handle('recent-tracks:load', async () => {
 
   try {
     const recentTracks = settingsStore.get('recentTracks', [])
-    
-    // Mark all recent track paths as allowed for reading
-    if (Array.isArray(recentTracks)) {
-      recentTracks.forEach((track) => {
-        if (track.filePath) {
-          markPathAsAllowed(track.filePath)
-        }
-      })
-    }
-    
+
     return recentTracks
   } catch (error) {
     console.error('Failed to load recent tracks:', error)
@@ -283,10 +341,47 @@ ipcMain.handle('recent-tracks:load', async () => {
   }
 })
 
+ipcMain.handle('file:approveRecentAudioPath', async (event, filePath) => {
+  try {
+    const normalizedPath = normalizeFilePath(filePath)
+    if (!normalizedPath) {
+      return false
+    }
+
+    const recentPlaylist = settingsStore?.get('recentPlaylist', [])
+    const recentTracks = settingsStore?.get('recentTracks', [])
+    const isKnownRecentPath = [recentPlaylist, recentTracks].some((collection) => {
+      if (!Array.isArray(collection)) {
+        return false
+      }
+
+      return collection.some((item) => {
+        if (typeof item === 'string') {
+          return normalizeFilePath(item) === normalizedPath
+        }
+
+        return item?.filePath && normalizeFilePath(item.filePath) === normalizedPath
+      })
+    })
+
+    if (!isKnownRecentPath && !isPathUnderApprovedDirectory(normalizedPath)) {
+      console.warn('Blocked approval for unknown recent audio path:', filePath)
+      return false
+    }
+
+    markPathAsAllowed(normalizedPath)
+    persistApprovedPaths()
+    return true
+  } catch (error) {
+    console.error('Failed to approve recent audio path:', error)
+    return false
+  }
+})
+
 
 ipcMain.handle('file:readAudioFile', async (event, filePath) => {
   try {
-    if (!isAllowedAudioPath(filePath)) {
+    if (!isAllowedAudioPath(filePath) && !isPathUnderApprovedDirectory(filePath)) {
       console.warn('Blocked readAudioFile for non-approved path:', filePath)
       return null
     }

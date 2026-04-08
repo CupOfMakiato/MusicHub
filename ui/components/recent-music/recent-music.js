@@ -52,8 +52,12 @@ function InitializeRecentMusic() {
             trackElements.forEach((element) => {
                 element.addEventListener('click', () => {
                     const filePath = element.getAttribute('data-file-path')
-                    if (filePath && window.audioService) {
-                        window.audioService.startPlaylist([filePath])
+                    if (filePath && window.sessionService?.approveRecentAudioPath && window.audioService) {
+                        window.sessionService.approveRecentAudioPath(filePath).then((approved) => {
+                            if (approved) {
+                                window.audioService.startPlaylist([filePath])
+                            }
+                        })
                     }
                 })
             })

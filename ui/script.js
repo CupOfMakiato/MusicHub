@@ -165,6 +165,9 @@ openFolderButton?.addEventListener('click', async () => {
             playerState?.setPlaylist([])
             playerState?.setCurrentTrackIndex(-1)
             audioService?.clearCurrentMusic()
+            if (window.sessionService?.savePlaylist) {
+                await window.sessionService.savePlaylist([], -1, 0)
+            }
             return
         }
 

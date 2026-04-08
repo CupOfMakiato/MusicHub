@@ -122,6 +122,19 @@ window.sessionService = (() => {
 		return saveRecentTracks(updated)
 	}
 
+	async function approveRecentAudioPath(filePath) {
+		if (!hasAPI('approveRecentAudioPath')) {
+			return false
+		}
+
+		try {
+			return Boolean(await window.electronAPI.approveRecentAudioPath(filePath))
+		} catch (error) {
+			console.error('Failed to approve recent audio path:', error)
+			return false
+		}
+	}
+
 	return {
 		loadSavedVolume,
 		saveVolume,
@@ -130,5 +143,6 @@ window.sessionService = (() => {
 		loadRecentTracks,
 		saveRecentTracks,
 		prependRecentTrack,
+		approveRecentAudioPath,
 	}
 })()

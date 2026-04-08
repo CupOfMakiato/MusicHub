@@ -193,7 +193,7 @@ window.audioService = (() => {
 		const startAtSeconds = Math.max(0, Number(options.startAtSeconds) || 0)
 
 		const filePath = playlist[index]
-		const trackData = await readMetadata(filePath)
+		const trackData = await readMetadata(filePath, getFileName(filePath))
 
 		state.setCurrentTrackIndex(index)
 		state.setCurrentTrack(trackData)
@@ -261,7 +261,17 @@ window.audioService = (() => {
 	}
 
 	function togglePlayPause() {
-		if (!currentSound) return
+		if (!currentSound) {
+			const { playlist, currentTrackIndex } = state?.getState?.() || {}
+			if (Array.isArray(playlist) && currentTrackIndex >= 0 && currentTrackIndex < playlist.length) {
+				playTrackAtIndex(currentTrackIndex, {
+					autoplay: true,
+					startAtSeconds: 0,
+					addToRecentTracks: false,
+				})
+			}
+			return
+		}
 		if (currentSound.playing()) {
 			currentSound.pause()
 		} else {

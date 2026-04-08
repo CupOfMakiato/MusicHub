@@ -145,7 +145,9 @@ function initializePlayer() {
 
         function updateProgress() {
             const sound = audioService.getCurrentSound();
-            if (!sound || !sound.playing()) {
+            const { isPlaying } = playerState.getState();
+
+            if (!sound || !isPlaying) {
                 stopProgressLoop();
                 return;
             }
@@ -165,7 +167,8 @@ function initializePlayer() {
             }
 
             const sound = audioService.getCurrentSound();
-            if (!sound || !sound.playing()) {
+            const { isPlaying } = playerState.getState();
+            if (!sound || !isPlaying) {
                 return;
             }
 
@@ -176,7 +179,8 @@ function initializePlayer() {
             updatePlayerUI();
 
             const sound = audioService.getCurrentSound();
-            if (sound && sound.playing()) {
+            const { isPlaying } = playerState.getState();
+            if (sound && isPlaying) {
                 startProgressLoop();
             } else {
                 stopProgressLoop();
