@@ -76,17 +76,29 @@ if (coverImage) {
 
 function startStateSync() {
     updateTrackInfoFromState()
-    window.setInterval(updateTrackInfoFromState, 200)
+    let unsubscribe = null
+
+    if (window.playerState?.subscribe) {
+        unsubscribe = window.playerState.subscribe(() => {
+            updateTrackInfoFromState()
+        })
+    }
+
+    window.addEventListener('beforeunload', () => {
+        if (typeof unsubscribe === 'function') {
+            unsubscribe()
+        }
+    }, { once: true })
 }
 
 async function restoreSavedPlaylist() {
     try {
-        if (!window.electronAPI?.loadPlaylist) {
-            console.log('loadPlaylist not available from electronAPI')
+        if (!window.sessionService?.loadPlaylist) {
+            console.log('loadPlaylist not available from sessionService')
             return
         }
 
-        const { playlist, currentTrackIndex } = await window.electronAPI.loadPlaylist()
+        const { playlist, currentTrackIndex, playbackPosition } = await window.sessionService.loadPlaylist()
 
         if (!playlist || playlist.length === 0) {
             console.log('No saved playlist to restore')
@@ -97,7 +109,12 @@ async function restoreSavedPlaylist() {
         playerState?.setPlaylist(playlist)
 
         if (currentTrackIndex >= 0 && currentTrackIndex < playlist.length) {
-            audioService?.playTrackAtIndex(currentTrackIndex)
+            console.log('Restoring track at index', currentTrackIndex, 'paused at', playbackPosition, 'seconds')
+            audioService?.playTrackAtIndex(currentTrackIndex, {
+                autoplay: false,
+                startAtSeconds: playbackPosition,
+                addToRecentTracks: false,
+            })
         }
     } catch (error) {
         console.error('Failed to restore saved playlist:', error)

@@ -2,9 +2,11 @@ window.audioService = (() => {
 	const placeholderCover = './assets/music-placeholder.png'
 	const DEFAULT_VOLUME = 0.7
 	const state = window.playerState
+	const sessionService = window.sessionService
 	let music = null
 	let progressTimer = null
 	let currentSound = null
+	let playbackPersistTimer = null
 
 	function normalizeVolume(value) {
 		const parsed = Number(value)
@@ -75,6 +77,32 @@ window.audioService = (() => {
 		// progressTimer = window.setInterval(updateProgressSnapshot, 250)
 	}
 
+	function stopPlaybackPersistTracking() {
+		if (playbackPersistTimer) {
+			window.clearInterval(playbackPersistTimer)
+			playbackPersistTimer = null
+		}
+	}
+
+	function savePlaybackSnapshot(positionOverride) {
+		if (!state || !sessionService?.savePlaylist) return
+		const { playlist, currentTrackIndex } = state.getState()
+		if (!Array.isArray(playlist) || playlist.length === 0 || currentTrackIndex < 0) return
+
+		const position = Number.isFinite(Number(positionOverride))
+			? Number(positionOverride)
+			: Number(currentSound?.seek?.() || 0)
+
+		sessionService.savePlaylist(playlist, currentTrackIndex, Math.max(0, position))
+	}
+
+	function startPlaybackPersistTracking() {
+		stopPlaybackPersistTracking()
+		playbackPersistTimer = window.setInterval(() => {
+			savePlaybackSnapshot()
+		}, 1000)
+	}
+
 	async function readMetadata(filePath, fallbackTitle) {
 		if (!window.jsmediatags) {
 			return {
@@ -126,11 +154,12 @@ window.audioService = (() => {
 	}
 
 	function clearCurrentMusic() {
-		if (!music) return
-		music.stop()
-		music.unload()
-		music = null
+		if (!currentSound) return
+		currentSound.stop()
+		currentSound.unload()
+		currentSound = null
 		stopProgressTracking()
+		stopPlaybackPersistTracking()
 		if (state) {
 			state.setIsPlaying(false)
 			state.setProgress({ currentTime: 0, duration: 0, percent: 0 })
@@ -147,6 +176,7 @@ window.audioService = (() => {
 				currentSound.unload()
 				currentSound = null
 			}
+			stopPlaybackPersistTracking()
 			state.setIsPlaying(false)
 			state.setProgress({ currentTime: 0, duration: 0, percent: 0 })
 			return
@@ -154,10 +184,13 @@ window.audioService = (() => {
 		playTrackAtIndex(nextIndex)
 	}
 
-	async function playTrackAtIndex(index) {
+	async function playTrackAtIndex(index, options = {}) {
 		if (!state) return
 		const { playlist } = state.getState()
 		if (index < 0 || index >= playlist.length) return
+		const autoplay = options.autoplay !== false
+		const addToRecentTracks = options.addToRecentTracks !== false
+		const startAtSeconds = Math.max(0, Number(options.startAtSeconds) || 0)
 
 		const filePath = playlist[index]
 		const trackData = await readMetadata(filePath)
@@ -166,14 +199,10 @@ window.audioService = (() => {
 		state.setCurrentTrack(trackData)
 
 		// Save current track index and playlist
-		if (window.electronAPI?.savePlaylist) {
-			window.electronAPI.savePlaylist(playlist, index).catch((error) => {
-				console.error('Failed to persist playlist index:', error)
-			})
-		}
+		sessionService?.savePlaylist(playlist, index, startAtSeconds)
 
 		// Add to recent tracks
-		if (window.electronAPI?.saveRecentTracks) {
+		if (addToRecentTracks && sessionService?.prependRecentTrack) {
 			const recentTrack = {
 				filePath,
 				title: trackData.title,
@@ -181,20 +210,15 @@ window.audioService = (() => {
 				image: trackData.image,
 				playedAt: new Date().toISOString(),
 			}
-			// Fetch existing recent tracks and add this one
-			window.electronAPI.loadRecentTracks()
-				.then((recent) => {
-					const updated = [recentTrack, ...recent].filter((item, index, self) =>
-						index === self.findIndex((t) => t.filePath === item.filePath)
-					)
-					return window.electronAPI.saveRecentTracks(updated)
-				})
+			sessionService.prependRecentTrack(recentTrack)
 				.catch((error) => {
 					console.error('Failed to update recent tracks:', error)
 				})
 		}
 
 		if (currentSound) {
+			savePlaybackSnapshot()
+			stopPlaybackPersistTracking()
 			currentSound.stop()
 		}
 
@@ -205,14 +229,35 @@ window.audioService = (() => {
 			src: [filePath],
 			html5: true,
 			volume,
-			onplay: () => state.setIsPlaying(true),
-			onpause: () => state.setIsPlaying(false),
+			onload: () => {
+				if (startAtSeconds > 0 && currentSound) {
+					currentSound.seek(startAtSeconds)
+					const duration = currentSound.duration() || 0
+					const percent = duration > 0 ? Math.min(100, (startAtSeconds / duration) * 100) : 0
+					state.setProgress({ currentTime: startAtSeconds, duration, percent })
+				}
+			},
+			onplay: () => {
+				state.setIsPlaying(true)
+				startPlaybackPersistTracking()
+			},
+			onpause: () => {
+				state.setIsPlaying(false)
+				savePlaybackSnapshot()
+				stopPlaybackPersistTracking()
+			},
 			onend: () => playNextInQueue(),
 			onseek: () => {
+				savePlaybackSnapshot()
 			},
 		})
 
-		currentSound.play()
+		if (autoplay) {
+			currentSound.play()
+		} else {
+			state.setIsPlaying(false)
+			state.setProgress({ currentTime: startAtSeconds, percent: 0 })
+		}
 	}
 
 	function togglePlayPause() {
@@ -245,11 +290,7 @@ window.audioService = (() => {
 		state.setPlaylist(filePaths)
 		
 		// Save playlist for next session
-		if (window.electronAPI?.savePlaylist) {
-			window.electronAPI.savePlaylist(filePaths, 0).catch((error) => {
-				console.error('Failed to persist playlist:', error)
-			})
-		}
+		sessionService?.savePlaylist(filePaths, 0)
 		
 		playTrackAtIndex(0)
 	}
@@ -274,21 +315,17 @@ window.audioService = (() => {
 		}
 		state.setVolume(normalizedVolume)
 
-		if (window.electronAPI?.saveVolume) {
-			window.electronAPI.saveVolume(normalizedVolume).catch((error) => {
-				console.error('Failed to persist volume:', error)
-			})
-		}
+		sessionService?.saveVolume(normalizedVolume)
 	}
 
 	async function initializeVolumeFromStore() {
-		if (!window.electronAPI?.getSavedVolume) {
+		if (!sessionService?.loadSavedVolume) {
 			setVolume(DEFAULT_VOLUME)
 			return
 		}
 
 		try {
-			const savedVolume = await window.electronAPI.getSavedVolume()
+			const savedVolume = await sessionService.loadSavedVolume()
 			setVolume(savedVolume)
 		} catch (error) {
 			console.error('Failed to load saved volume:', error)
@@ -297,6 +334,15 @@ window.audioService = (() => {
 	}
 
 	initializeVolumeFromStore()
+
+	window.addEventListener('beforeunload', () => {
+		savePlaybackSnapshot()
+		stopPlaybackPersistTracking()
+		if (currentSound) {
+			currentSound.unload()
+			currentSound = null
+		}
+	})
 
 	function getCurrentSound() {
 		return currentSound

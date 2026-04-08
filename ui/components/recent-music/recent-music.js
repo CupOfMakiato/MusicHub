@@ -5,14 +5,19 @@ function InitializeRecentMusic() {
         return;
     }
 
+    if (recentMusic.dataset.initialized === 'true') {
+        return
+    }
+    recentMusic.dataset.initialized = 'true'
+
     async function loadAndRenderRecentTracks() {
         try {
-            if (!window.electronAPI?.loadRecentTracks) {
-                console.warn('loadRecentTracks not available from electronAPI')
+            if (!window.sessionService?.loadRecentTracks) {
+                console.warn('loadRecentTracks not available from sessionService')
                 return
             }
 
-            const tracks = await window.electronAPI.loadRecentTracks()
+            const tracks = await window.sessionService.loadRecentTracks()
             const container = recentMusic.querySelector('.recentMusicList') || recentMusic
 
             if (!tracks || tracks.length === 0) {
@@ -66,12 +71,15 @@ function InitializeRecentMusic() {
     // Load and render on initialization
     loadAndRenderRecentTracks()
 
-    // Reload when player state changes (when a new track is played)
-    if (window.playerState) {
-        window.playerState.subscribe(() => {
-            loadAndRenderRecentTracks()
-        })
+    // Reload only when recent tracks are updated.
+    const onRecentTracksUpdated = () => {
+        loadAndRenderRecentTracks()
     }
+
+    window.addEventListener('recent-tracks:updated', onRecentTracksUpdated)
+    window.addEventListener('beforeunload', () => {
+        window.removeEventListener('recent-tracks:updated', onRecentTracksUpdated)
+    }, { once: true })
 }
 
 window.InitializeRecentMusic = InitializeRecentMusic;

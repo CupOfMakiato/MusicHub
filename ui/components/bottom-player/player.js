@@ -172,7 +172,7 @@ function initializePlayer() {
             progressRafId = requestAnimationFrame(updateProgress);
         }
 
-        playerState.subscribe(() => {
+        const unsubscribe = playerState.subscribe(() => {
             updatePlayerUI();
 
             const sound = audioService.getCurrentSound();
@@ -182,6 +182,13 @@ function initializePlayer() {
                 stopProgressLoop();
             }
         });
+
+        window.addEventListener('beforeunload', () => {
+            stopProgressLoop();
+            if (typeof unsubscribe === 'function') {
+                unsubscribe();
+            }
+        }, { once: true });
 
         startProgressLoop();
     }

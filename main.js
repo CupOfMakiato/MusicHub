@@ -6,6 +6,9 @@ const MAX_AUDIO_FILE_BYTES = Number(process.env.MAX_AUDIO_FILE_BYTES || 50 * 102
 const DEFAULT_VOLUME = 0.7
 let settingsStore = null
 const allowedAudioPaths = new Set()
+let memoryLogInterval = null
+
+app.disableHardwareAcceleration()
 
 function getAppIconPath() {
   const iconCandidates = [
@@ -48,6 +51,12 @@ function normalizeVolume(value) {
   return Math.max(0, Math.min(1, parsed))
 }
 
+function normalizePlaybackPosition(value) {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return 0
+  return Math.max(0, parsed)
+}
+
 const createWindow = () => {
   const appIcon = getAppIconPath()
   const win = new BrowserWindow({
@@ -58,26 +67,25 @@ const createWindow = () => {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
+      backgroundThrottling: true,
     },
     autoHideMenuBar: true,
   })
 
   win.loadFile('ui/index.html')
-  win.webContents.openDevTools();
+  if (!app.isPackaged) {
+    win.webContents.openDevTools()
+  }
   win.on('ready-to-show', () => {
     win.show()
   })
 }
 
-app.on('ready', () => {
+app.whenReady().then(async () => {
   if (process.platform === 'win32') {
     app.setAppUserModelId('com.makiato.musichub')
   }
 
-  createWindow()
-});
-
-app.whenReady().then(async () => {
   const { default: Store } = await import('electron-store')
   settingsStore = new Store({
     name: 'settings',
@@ -85,9 +93,34 @@ app.whenReady().then(async () => {
       playerVolume: DEFAULT_VOLUME,
       recentPlaylist: [],
       recentPlaylistIndex: -1,
+      recentPlaybackPosition: 0,
       recentTracks: [],
     },
   })
+
+  createWindow()
+
+  if (process.env.ELECTRON_MEMORY_LOG === '1') {
+    memoryLogInterval = setInterval(() => {
+      const usage = process.memoryUsage()
+      console.log('Memory usage (MB):', {
+        rss: Math.round(usage.rss / 1024 / 1024),
+        heapUsed: Math.round(usage.heapUsed / 1024 / 1024),
+        heapTotal: Math.round(usage.heapTotal / 1024 / 1024),
+        external: Math.round(usage.external / 1024 / 1024),
+      })
+    }, 15000)
+  }
+}).catch((error) => {
+  console.error('Failed during app startup:', error)
+  app.quit()
+})
+
+app.on('before-quit', () => {
+  if (memoryLogInterval) {
+    clearInterval(memoryLogInterval)
+    memoryLogInterval = null
+  }
 })
 
 app.on('window-all-closed', () => {
@@ -172,14 +205,15 @@ ipcMain.handle('settings:setVolume', async (event, volume) => {
   return normalizedVolume
 })
 
-ipcMain.handle('playlist:save', async (event, { playlist, currentTrackIndex }) => {
+ipcMain.handle('playlist:save', async (event, { playlist, currentTrackIndex, playbackPosition }) => {
   if (!settingsStore) {
     return false
   }
 
   try {
     settingsStore.set('recentPlaylist', playlist || [])
-    settingsStore.set('recentPlaylistIndex', currentTrackIndex || -1)
+    settingsStore.set('recentPlaylistIndex', currentTrackIndex ?? -1)
+    settingsStore.set('recentPlaybackPosition', normalizePlaybackPosition(playbackPosition))
     return true
   } catch (error) {
     console.error('Failed to save playlist:', error)
@@ -189,22 +223,23 @@ ipcMain.handle('playlist:save', async (event, { playlist, currentTrackIndex }) =
 
 ipcMain.handle('playlist:load', async () => {
   if (!settingsStore) {
-    return { playlist: [], currentTrackIndex: -1 }
+    return { playlist: [], currentTrackIndex: -1, playbackPosition: 0 }
   }
 
   try {
     const playlist = settingsStore.get('recentPlaylist', [])
     const currentTrackIndex = settingsStore.get('recentPlaylistIndex', -1)
+    const playbackPosition = normalizePlaybackPosition(settingsStore.get('recentPlaybackPosition', 0))
     
     // Mark all restored playlist paths as allowed for reading
     if (Array.isArray(playlist)) {
       playlist.forEach((filePath) => markPathAsAllowed(filePath))
     }
     
-    return { playlist, currentTrackIndex }
+    return { playlist, currentTrackIndex, playbackPosition }
   } catch (error) {
     console.error('Failed to load playlist:', error)
-    return { playlist: [], currentTrackIndex: -1 }
+    return { playlist: [], currentTrackIndex: -1, playbackPosition: 0 }
   }
 })
 
