@@ -226,7 +226,7 @@ window.audioService = (() => {
 		console.log('Playing track with volume:', volume)
 
 		currentSound = new Howl({
-			src: [filePath],
+			src: [toFileUrl(filePath)],
 			html5: true,
 			volume,
 			onload: () => {
