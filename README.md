@@ -6,4 +6,5 @@ This repository is my attempt at exploring Electron (for cross-platform desktop 
 
 ## Package
 
-I have to admit the disk size after packaged is still so huge ~300MB which isn't what i have anticipated when first started this porject...
+I have to admit the disk size after packaged is still so huge ~300MB which isn't what i have anticipated when first started this project...
+
