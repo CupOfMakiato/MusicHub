@@ -1,23 +1,44 @@
 <!DOCTYPE html>
 <html>
   <head>
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=DynaPuff&family=Noto+Sans:ital,wght@0,100..900;1,100..900&family=Rubik:ital,wght@0,300..900;1,300..900&display=swap');
+    </style>
     <meta charset="UTF-8" />
-    <meta
+    <link rel="stylesheet" href="./ui.css" />
+    <link rel="stylesheet" href="./components/bottom-player/player.css" />
+    <link rel="stylesheet" href="./components/recent-music/recent-music.css" />
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://unpkg.com/howler@2.2.4/dist/howler.min.js"></script>
+    <script src="https://unpkg.com/jsmediatags@3.9.7/dist/jsmediatags.min.js"></script>
+    <!-- <meta
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self'"
-    />
+    /> -->
     <meta
       http-equiv="X-Content-Security-Policy"
       content="default-src 'self'; script-src 'self'"
     />
-    <title>BlueberryPlayer</title>
+    
+    <title>Blueberry Player</title>
   </head>
   <body>
-    <h1>first start of BlueberryPlayer</h1>
+    <!-- <h1>first start of BlueberryPlayer</h1> -->
 
-    <img src="./assets/music-placeholder.png" alt="placeholder" object-fit="cover" width="200" height="200" />
+    <div id="sidebar"></div> 
+    <div id="recent-music"></div>
+    <img id="coverImage" src="./assets/music-placeholder.png" alt="Album cover" draggable="false"/>
+    <h2 id="trackTitle">No track selected</h2>
+    <p id="trackArtist">Select a file to start playing</p>
 
     <button id="selectFile">Select File</button>
+    <button id="selectFolder">Select Folder</button>
+    <div id="bottom-player"></div>
+    <script src="./state/player-state.js"></script>
+    <script src="./services/session-service.js"></script>
+    <script src="./services/audio-service.js"></script>
+    <script src="./components/recent-music/recent-music.js"></script>
+    <script src="./components/bottom-player/player.js"></script>
     <script src="./script.js"></script>
   </body>
   
