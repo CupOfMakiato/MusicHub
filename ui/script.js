@@ -4,6 +4,40 @@ const coverImage = document.getElementById('coverImage')
 const trackTitle = document.getElementById('trackTitle')
 const trackArtist = document.getElementById('trackArtist')
 const placeholderCover = window.audioService?.placeholderCover || './assets/music-placeholder.png'
+let currentRoute = 'home'
+const homeOnlyElements = [coverImage, trackTitle, trackArtist, selectFileButton, openFolderButton].filter(Boolean)
+const routeCleanups = new Map()
+
+const routeDefinitions = {
+    home: {
+        hostId: 'recent-music',
+        filePath: './components/recent-music/recent-music.html',
+        onLoad: () => {
+            window.InitializeRecentMusic?.()
+        },
+    },
+    library: {
+        hostId: 'recent-music',
+        filePath: './pages/library/library-layout.html',
+        onLoad: () => {
+            window.initializeLibraryPage?.()
+        },
+    },
+    playlist: {
+        hostId: 'recent-music',
+        filePath: './pages/playlist/playlist-layout.html',
+        onLoad: () => {
+            window.initializePlaylistPage?.()
+        },
+    },
+    queue: {
+        hostId: 'recent-music',
+        filePath: './pages/playlist/playlist-layout.html',
+        onLoad: () => {
+            window.initializePlaylistPage?.()
+        },
+    },
+}
 
 async function loadComponent(
   elementId,
@@ -31,18 +65,13 @@ async function loadComponent(
 async function initUI() {
         await loadComponent(
     "sidebar",
-        "./components/sidebar/sidebar.html"
-    )
-
-        await loadComponent(
-    "recent-music",
-        "./components/recent-music/recent-music.html",
+        "./components/sidebar/sidebar.html",
         () => {
-            if (window.InitializeRecentMusic) {
-                        window.InitializeRecentMusic()
-            }
+            initializeSidebarRouting()
         }
     )
+
+    await renderRoute('home')
 
         await loadComponent(
     "bottom-player",
@@ -53,6 +82,135 @@ async function initUI() {
             }
         }
     )
+}
+
+function getRouteDefinition(routeName) {
+    return routeDefinitions[routeName] || routeDefinitions.home
+}
+
+function registerRouteCleanup(routeName, cleanupFn) {
+    if (!routeName || typeof cleanupFn !== 'function') {
+        return
+    }
+
+    const previousCleanup = routeCleanups.get(routeName)
+    if (typeof previousCleanup === 'function') {
+        try {
+            previousCleanup()
+        } catch (error) {
+            console.error('Failed to cleanup route resources:', error)
+        }
+    }
+
+    routeCleanups.set(routeName, cleanupFn)
+}
+
+function cleanupInactiveRouteResources(activeRoute = null) {
+    routeCleanups.forEach((cleanupFn, routeName) => {
+        if (activeRoute && routeName === activeRoute) {
+            return
+        }
+
+        if (typeof cleanupFn === 'function') {
+            try {
+                cleanupFn()
+            } catch (error) {
+                console.error('Failed to cleanup route resources:', error)
+            }
+        }
+
+        routeCleanups.delete(routeName)
+    })
+}
+
+function normalizeRouteName(routeName) {
+    return routeDefinitions[routeName] ? routeName : 'home'
+}
+
+function cleanupAllRouteResources() {
+    cleanupInactiveRouteResources(null)
+}
+
+window.addEventListener('beforeunload', () => {
+    cleanupAllRouteResources()
+}, { once: true })
+
+async function renderRoute(routeName) {
+    const route = normalizeRouteName(routeName || 'home')
+    const routeDefinition = getRouteDefinition(route)
+
+    currentRoute = route
+    cleanupInactiveRouteResources(route)
+    updateHomeVisibility(route)
+
+    await loadComponent(
+        routeDefinition.hostId,
+        routeDefinition.filePath,
+        routeDefinition.onLoad
+    )
+}
+
+function updateHomeVisibility(route) {
+    const isHome = route === 'home'
+
+    homeOnlyElements.forEach((element) => {
+        if (!element) {
+            return
+        }
+
+        const hasPreviousDisplay = element.dataset.previousDisplay !== undefined
+
+        if (isHome) {
+            if (!hasPreviousDisplay) {
+                element.style.removeProperty('display')
+                return
+            }
+
+            const previousDisplay = element.dataset.previousDisplay
+            if (previousDisplay) {
+                element.style.display = previousDisplay
+            } else {
+                element.style.removeProperty('display')
+            }
+
+            delete element.dataset.previousDisplay
+            return
+        }
+
+        if (!hasPreviousDisplay) {
+            element.dataset.previousDisplay = element.style.display || ''
+        }
+        element.style.display = 'none'
+    })
+}
+
+window.appRouter = {
+    goTo: async (routeName) => {
+        await renderRoute(routeName)
+    },
+    getCurrentRoute: () => currentRoute,
+    registerCleanup: (routeName, cleanupFn) => {
+        registerRouteCleanup(routeName, cleanupFn)
+    },
+    registerCurrentRouteCleanup: (cleanupFn) => {
+        registerRouteCleanup(currentRoute, cleanupFn)
+    },
+}
+
+function initializeSidebarRouting() {
+    const sidebar = document.getElementById('sidebar')
+    if (!sidebar) {
+        return
+    }
+
+    const routeLinks = sidebar.querySelectorAll('[data-route]')
+    routeLinks.forEach((link) => {
+        link.addEventListener('click', async (event) => {
+            event.preventDefault()
+            const route = link.getAttribute('data-route') || 'home'
+            await renderRoute(route)
+        })
+    })
 }
 
 function updateTrackInfoFromState() {
@@ -124,6 +282,7 @@ async function restoreSavedPlaylist() {
 document.addEventListener('DOMContentLoaded', async () => {
     await initUI()
     startStateSync()
+    updateHomeVisibility('home')
 
     // Restore playlist from previous session
     restoreSavedPlaylist()

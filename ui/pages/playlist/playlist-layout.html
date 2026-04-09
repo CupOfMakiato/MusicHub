@@ -1,10 +1,38 @@
-<!-- Basically is a queue -->
-<!-- Header -->
-<!-- Image --> <!-- Banner --> <!-- Album Name -->
+<section class="playlistPage">
+	<header class="playlistHeader">
+		<!-- <div class="playlistHeaderBanner" id="playlistHeaderBanner"></div> -->
+		<div class="playlistHeaderBody">
+			<img id="playlistImage" class="playlistImage" src="./assets/music-placeholder.png" alt="Playlist image" draggable="false" />
+			<div class="playlistMeta">
+				<p class="playlistMetaLabel">Playlist</p>
+				<h2 id="playlistTitle">No playlist selected</h2>
+				<p id="playlistSubtitle"><span id="playlistTrackCount">Choose a playlist from your library.</span><span id="playlistDuration"></span></p>
+			</div>
+		</div>
+	</header>
 
-<!-- Control --> 
-<!-- Play button --> <!-- Add Button -->
+	<section class="playlistControls">
+		<button id="playlistPlayBtn" type="button" aria-label="Play playlist">
+			<i data-lucide="play"></i>
+		</button>
+		<label class="playlistPickerLabel" for="playlistPicker">Playlist</label>
+		<select id="playlistPicker"></select>
+	</section>
 
-<!-- Track List -->
-<!-- music list --> 
-<!-- (has current nth, title, album, datecreated, date added, duration) -->
+	<section class="playlistTrackSection">
+		<table class="playlistTrackTable">
+			<thead>
+				<tr>
+					<th>#</th>
+					<th>Title</th>
+					<th>Artist</th>
+					<th>Album</th>
+					<th>Date Added</th>
+					<th>Duration</th>
+						<th></th>
+				</tr>
+			</thead>
+			<tbody id="playlistTrackBody"></tbody>
+		</table>
+	</section>
+</section>

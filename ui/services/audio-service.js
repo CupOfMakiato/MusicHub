@@ -1,6 +1,7 @@
 window.audioService = (() => {
 	const placeholderCover = './assets/music-placeholder.png'
 	const DEFAULT_VOLUME = 0.7
+	const METADATA_DEBUG_ENABLED = true
 	const state = window.playerState
 	const sessionService = window.sessionService
 	let music = null
@@ -57,6 +58,17 @@ window.audioService = (() => {
 		return segments[segments.length - 1] || 'Unknown Title'
 	}
 
+	function logMetadataDebug(filePath, phase, payload = {}) {
+		if (!METADATA_DEBUG_ENABLED) return
+		const fileName = getFileName(filePath)
+		// console.log('[metadata-debug]', {
+		// 	phase,
+		// 	filePath,
+		// 	fileName,
+		// 	...payload,
+		// })
+	}
+
 	function stopProgressTracking() {
 		if (progressTimer) {
 			window.clearInterval(progressTimer)
@@ -105,9 +117,13 @@ window.audioService = (() => {
 
 	async function readMetadata(filePath, fallbackTitle) {
 		if (!window.jsmediatags) {
+			logMetadataDebug(filePath, 'jsmediatags-missing', {
+				fallbackTitle,
+			})
 			return {
 				title: fallbackTitle,
 				artist: 'No metadata available',
+				album: 'No metadata available',
 				image: null,
 			}
 		}
@@ -116,9 +132,13 @@ window.audioService = (() => {
 			const fileData = await window.electronAPI.readAudioFile(filePath)
 
 			if (!fileData) {
+				logMetadataDebug(filePath, 'file-data-missing', {
+					fallbackTitle,
+				})
 				return {
 					title: fallbackTitle,
 					artist: 'No metadata available',
+					album: 'No metadata available',
 					image: null,
 				}
 			}
@@ -129,25 +149,51 @@ window.audioService = (() => {
 			return await new Promise((resolve) => {
 				window.jsmediatags.read(blob, {
 					onSuccess: (tag) => {
+						const rawTags = tag?.tags || {}
+						const pictureBytes = rawTags?.picture?.data?.length || 0
+						logMetadataDebug(filePath, 'metadata-loaded', {
+							fallbackTitle,
+							title: rawTags.title || null,
+							artist: rawTags.artist || null,
+							album: rawTags.album || null,
+							year: rawTags.year || null,
+							genre: rawTags.genre || null,
+							track: rawTags.track || null,
+							disc: rawTags.disc || null,
+							hasPicture: Boolean(rawTags.picture),
+							pictureFormat: rawTags?.picture?.format || null,
+							pictureBytes,
+						})
 						resolve({
-							title: tag.tags.title || fallbackTitle || 'Unknown Title',
-							artist: tag.tags.artist || 'Unknown Artist',
-							image: getPictureDataUrl(tag.tags.picture),
+							title: rawTags.title || fallbackTitle || 'Unknown Title',
+							artist: rawTags.artist || 'Unknown Artist',
+							album: rawTags.album || 'Unknown Album',
+							image: getPictureDataUrl(rawTags.picture),
 						})
 					},
-					onError: () => {
+					onError: (error) => {
+						logMetadataDebug(filePath, 'metadata-read-error', {
+							fallbackTitle,
+							error: error?.info || error?.type || String(error || 'unknown error'),
+						})
 						resolve({
 							title: fallbackTitle,
 							artist: 'No metadata available',
+							album: 'No metadata available',
 							image: null,
 						})
 					},
 				})
 			})
 		} catch (error) {
+			logMetadataDebug(filePath, 'metadata-exception', {
+				fallbackTitle,
+				error: String(error?.message || error || 'unknown error'),
+			})
 			return {
 				title: fallbackTitle,
 				artist: 'No metadata available',
+				album: 'No metadata available',
 				image: null,
 			}
 		}
@@ -194,6 +240,12 @@ window.audioService = (() => {
 
 		const filePath = playlist[index]
 		const trackData = await readMetadata(filePath, getFileName(filePath))
+		logMetadataDebug(filePath, 'metadata-resolved-for-playback', {
+			resolvedTitle: trackData?.title || null,
+			resolvedArtist: trackData?.artist || null,
+			resolvedAlbum: trackData?.album || null,
+			hasImage: Boolean(trackData?.image),
+		})
 
 		state.setCurrentTrackIndex(index)
 		state.setCurrentTrack(trackData)
@@ -207,6 +259,7 @@ window.audioService = (() => {
 				filePath,
 				title: trackData.title,
 				artist: trackData.artist,
+				album: trackData.album,
 				image: trackData.image,
 				playedAt: new Date().toISOString(),
 			}

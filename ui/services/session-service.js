@@ -1,6 +1,7 @@
 window.sessionService = (() => {
 	const DEFAULT_VOLUME = 0.7
-	const MAX_RECENT_TRACKS = 20
+	const MAX_RECENT_TRACKS = 10
+	const USER_PLAYLISTS_KEY = 'musichub:user-playlists'
 
 	function normalizeVolume(value) {
 		const parsed = Number(value)
@@ -135,6 +136,111 @@ window.sessionService = (() => {
 		}
 	}
 
+	function normalizeUserPlaylists(playlists) {
+		if (!Array.isArray(playlists)) {
+			return []
+		}
+
+		return playlists
+			.map((playlist) => ({
+				id: typeof playlist?.id === 'string' ? playlist.id : `playlist-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
+				name: typeof playlist?.name === 'string' && playlist.name.trim() ? playlist.name.trim() : 'Untitled Playlist',
+				banner: typeof playlist?.banner === 'string' ? playlist.banner : '',
+				tracks: Array.isArray(playlist?.tracks)
+					? playlist.tracks.filter((track) => Boolean(track?.filePath)).map((track) => ({
+						...track,
+						album: typeof track?.album === 'string' ? track.album : 'Unknown Album',
+					}))
+					: [],
+				createdAt: typeof playlist?.createdAt === 'string' ? playlist.createdAt : new Date().toISOString(),
+				updatedAt: typeof playlist?.updatedAt === 'string' ? playlist.updatedAt : new Date().toISOString(),
+			}))
+			.filter((playlist) => Boolean(playlist.id))
+	}
+
+	async function loadUserPlaylists() {
+		try {
+			const raw = window.localStorage.getItem(USER_PLAYLISTS_KEY)
+			if (!raw) {
+				return []
+			}
+
+			const parsed = JSON.parse(raw)
+			return normalizeUserPlaylists(parsed)
+		} catch (error) {
+			console.error('Failed to load user playlists:', error)
+			return []
+		}
+	}
+
+	async function saveUserPlaylists(playlists) {
+		try {
+			const normalized = normalizeUserPlaylists(playlists)
+			window.localStorage.setItem(USER_PLAYLISTS_KEY, JSON.stringify(normalized))
+			window.dispatchEvent(new CustomEvent('user-playlists:updated'))
+			return true
+		} catch (error) {
+			console.error('Failed to save user playlists:', error)
+			return false
+		}
+	}
+
+	async function addTrackToUserPlaylist(playlistId, track) {
+		if (!playlistId || !track?.filePath) {
+			return false
+		}
+
+		const playlists = await loadUserPlaylists()
+		const target = playlists.find((playlist) => playlist.id === playlistId)
+		if (!target) {
+			return false
+		}
+
+		const exists = target.tracks.some((item) => item.filePath === track.filePath)
+		if (!exists) {
+			target.tracks.push(track)
+			target.updatedAt = new Date().toISOString()
+		}
+
+		return saveUserPlaylists(playlists)
+	}
+
+	async function createUserPlaylist({ name, banner = '' }) {
+		const playlists = await loadUserPlaylists()
+		const now = new Date().toISOString()
+		const newPlaylist = {
+			id: `playlist-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
+			name: typeof name === 'string' && name.trim() ? name.trim() : `New Playlist ${playlists.length + 1}`,
+			banner: typeof banner === 'string' ? banner.trim() : '',
+			tracks: [],
+			createdAt: now,
+			updatedAt: now,
+		}
+
+		const saved = await saveUserPlaylists([newPlaylist, ...playlists])
+		return saved ? newPlaylist : null
+	}
+
+	async function createPlaylistAndAddTrack({ name, banner = '', track }) {
+		if (!track?.filePath) {
+			return null
+		}
+
+		const playlists = await loadUserPlaylists()
+		const now = new Date().toISOString()
+		const newPlaylist = {
+			id: `playlist-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
+			name: typeof name === 'string' && name.trim() ? name.trim() : `New Playlist ${playlists.length + 1}`,
+			banner: typeof banner === 'string' ? banner.trim() : '',
+			tracks: [track],
+			createdAt: now,
+			updatedAt: now,
+		}
+
+		const saved = await saveUserPlaylists([newPlaylist, ...playlists])
+		return saved ? newPlaylist : null
+	}
+
 	return {
 		loadSavedVolume,
 		saveVolume,
@@ -144,5 +250,10 @@ window.sessionService = (() => {
 		saveRecentTracks,
 		prependRecentTrack,
 		approveRecentAudioPath,
+		loadUserPlaylists,
+		saveUserPlaylists,
+		addTrackToUserPlaylist,
+		createUserPlaylist,
+		createPlaylistAndAddTrack,
 	}
 })()

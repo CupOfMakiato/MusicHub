@@ -95,8 +95,8 @@ function normalizePlaybackPosition(value) {
 const createWindow = () => {
   const appIcon = getAppIconPath()
   const win = new BrowserWindow({
-    width: 800,
-    height: 600,
+    width: 1000,
+    height: 800,
     icon: appIcon,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -229,8 +229,9 @@ ipcMain.handle('folder:getAudioFiles', async (event, folderPath) => {
       })
     )
 
+    // play files in order they were added to the folder
     const files = filesWithDates
-      .sort((a, b) => b.createdAt - a.createdAt)
+      .sort((a, b) => a.createdAt - b.createdAt)
       .map((item) => item.filePath)
 
     files.forEach((filePath) => {
