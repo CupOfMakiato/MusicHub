@@ -100,7 +100,7 @@
     display: none;
     position: absolute;
     right: 0;
-    left: 10;
+    /* left: 10; */
     top: 38px;
     min-width: 190px;
     background: #ffffff;
@@ -114,6 +114,14 @@
     display: grid;
     gap: 6px;
     z-index: 110;
+}
+
+#playlistPlayBtn {
+    width: 34px;
+    height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 #playlistPicker {

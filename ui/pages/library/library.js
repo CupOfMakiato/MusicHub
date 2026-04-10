@@ -1,12 +1,10 @@
-function initializeLibraryPage() {
+import { escapeHtml } from '../../utils/dom-helpers.js'
+import { resolvePlaylistImage } from '../../utils/playlist-media.js'
+import { sessionService } from '../../services/session-service.js'
+
+export function initializeLibraryPage() {
     const container = document.getElementById('libraryPlaylists')
     if (!container) {
-        return
-    }
-
-    const escapeHtml = window.domHelpers?.escapeHtml
-    if (typeof escapeHtml !== 'function') {
-        console.error('domHelpers.escapeHtml is not available in library page')
         return
     }
 
@@ -15,16 +13,18 @@ function initializeLibraryPage() {
     }
 
     async function render() {
-        const playlists = await window.sessionService?.loadUserPlaylists?.()
+        const playlists = await sessionService.loadUserPlaylists()
         if (!Array.isArray(playlists) || playlists.length === 0) {
-            container.innerHTML = '<p class="libraryEmpty">No playlists yet. Use Recent Music -> Create New Playlist.</p>'
+            container.innerHTML =
+                '<p class="libraryEmpty">No playlists yet. Use Recent Music -> Create New Playlist.</p>'
             return
         }
 
-        container.innerHTML = playlists.map((playlist) => {
-            const banner = playlist.banner || './assets/music-placeholder.png'
-            const trackCount = Array.isArray(playlist.tracks) ? playlist.tracks.length : 0
-            return `
+        container.innerHTML = playlists
+            .map((playlist) => {
+                const banner = resolvePlaylistImage(playlist)
+                const trackCount = Array.isArray(playlist.tracks) ? playlist.tracks.length : 0
+                return `
                 <article class="libraryPlaylistCard" data-playlist-id="${escapeHtml(playlist.id)}">
                     <img src="${escapeHtml(banner)}" alt="${escapeHtml(playlist.name)}" onerror="this.src='./assets/music-placeholder.png'">
                     <div class="libraryPlaylistContent">
@@ -34,7 +34,8 @@ function initializeLibraryPage() {
                     </div>
                 </article>
             `
-        }).join('')
+            })
+            .join('')
 
         const openButtons = container.querySelectorAll('.openPlaylistBtn')
         openButtons.forEach((button) => {

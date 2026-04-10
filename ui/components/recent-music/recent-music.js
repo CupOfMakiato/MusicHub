@@ -1,31 +1,20 @@
-function InitializeRecentMusic() {
+import {
+    escapeHtml,
+    attachIndexedMenuToggle,
+    openModal,
+    closeModalHost,
+    showModalPrompt,
+    bindModalResolve,
+} from '../../utils/dom-helpers.js'
+import { sessionService } from '../../services/session-service.js'
+import { audioService } from '../../services/audio-service.js'
+
+export function initializeRecentMusic() {
     const recentMusic = document.getElementById('recent-music')
     if (!recentMusic) {
-        console.error('Recent music element not found');
-        return;
-    }
-
-    const domHelpers = window.domHelpers
-    if (
-        !domHelpers?.escapeHtml
-        || !domHelpers?.attachIndexedMenuToggle
-        || !domHelpers?.openModal
-        || !domHelpers?.closeModalHost
-        || !domHelpers?.showModalPrompt
-        || !domHelpers?.bindModalResolve
-    ) {
-        console.error('domHelpers is not available in recent music page')
+        console.error('Recent music element not found')
         return
     }
-
-    const {
-        escapeHtml,
-        attachIndexedMenuToggle,
-        openModal,
-        closeModalHost,
-        showModalPrompt,
-        bindModalResolve,
-    } = domHelpers
 
     let cleanupTrackMenuToggles = null
 
@@ -66,7 +55,10 @@ function InitializeRecentMusic() {
         const viewportPadding = 8
 
         let left = buttonRect.right - menuWidth
-        left = Math.max(viewportPadding, Math.min(left, window.innerWidth - menuWidth - viewportPadding))
+        left = Math.max(
+            viewportPadding,
+            Math.min(left, window.innerWidth - menuWidth - viewportPadding),
+        )
 
         let top = buttonRect.bottom + 6
         if (top + menuHeight > window.innerHeight - viewportPadding) {
@@ -167,7 +159,7 @@ function InitializeRecentMusic() {
                     selector: '.recentModalConfirmBtn',
                     resolve,
                     getValue: () => ({
-                        name: nameInput?.value?.trim() || ''
+                        name: nameInput?.value?.trim() || '',
                     }),
                 })
             },
@@ -183,14 +175,18 @@ function InitializeRecentMusic() {
                     <h3>Add To Playlist</h3>
                     <p>Select a playlist for this track.</p>
                     <div class="recentPlaylistSelectList">
-                        ${playlists.map((playlist) => {
-                            const trackCount = Array.isArray(playlist.tracks) ? playlist.tracks.length : 0
-                            return `
+                        ${playlists
+                            .map((playlist) => {
+                                const trackCount = Array.isArray(playlist.tracks)
+                                    ? playlist.tracks.length
+                                    : 0
+                                return `
                                 <button type="button" class="recentPlaylistSelectBtn" data-playlist-id="${escapeHtml(playlist.id)}">
                                     ${escapeHtml(playlist.name)} <span>${trackCount} tracks</span>
                                 </button>
                             `
-                        }).join('')}
+                            })
+                            .join('')}
                     </div>
                     <div class="recentModalActions">
                         <button type="button" class="recentModalCancelBtn">Cancel</button>
@@ -256,11 +252,7 @@ function InitializeRecentMusic() {
         resetTrackActionsMenuPosition(openMenu)
     }
 
-    function bindTrackActionButtons({
-        selector,
-        tracks,
-        action,
-    }) {
+    function bindTrackActionButtons({ selector, tracks, action }) {
         if (!selector || typeof action !== 'function') {
             return
         }
@@ -284,7 +276,7 @@ function InitializeRecentMusic() {
     }
 
     async function handleAddToPlaylistAction(track) {
-        const playlists = await window.sessionService?.loadUserPlaylists?.()
+        const playlists = await sessionService.loadUserPlaylists()
         if (!Array.isArray(playlists) || playlists.length === 0) {
             showMessage('No playlists found. Please create a new playlist first.')
             return false
@@ -300,7 +292,7 @@ function InitializeRecentMusic() {
             return false
         }
 
-        const success = await window.sessionService?.addTrackToUserPlaylist?.(selectedPlaylist.id, track)
+        const success = await sessionService.addTrackToUserPlaylist(selectedPlaylist.id, track)
         if (success) {
             showMessage(`Added to playlist: ${selectedPlaylist.name}`)
         }
@@ -314,12 +306,12 @@ function InitializeRecentMusic() {
             return false
         }
 
-        const created = await window.sessionService?.createUserPlaylist?.({
-            name: formValues.name
+        const created = await sessionService.createUserPlaylist({
+            name: formValues.name,
         })
 
         if (created) {
-            await window.sessionService?.addTrackToUserPlaylist?.(created.id, track)
+            await sessionService.addTrackToUserPlaylist(created.id, track)
             showMessage(`Created playlist: ${created.name} and added this track.`)
         }
 
@@ -333,13 +325,8 @@ function InitializeRecentMusic() {
                 cleanupTrackMenuToggles = null
             }
 
-            if (!window.sessionService?.loadRecentTracks) {
-                console.warn('loadRecentTracks not available from sessionService')
-                return
-            }
-
-            const tracks = await window.sessionService.loadRecentTracks()
-            const playlists = await window.sessionService?.loadUserPlaylists?.() || []
+            const tracks = await sessionService.loadRecentTracks()
+            const playlists = (await sessionService.loadUserPlaylists()) || []
             const hasExistingPlaylist = Array.isArray(playlists) && playlists.length > 0
             const container = recentMusic.querySelector('.recentMusicList') || recentMusic
 
@@ -352,7 +339,7 @@ function InitializeRecentMusic() {
             tracks.forEach((track, index) => {
                 const title = track.title || 'Unknown Title'
                 const artist = track.artist || 'Unknown Artist'
-                
+
                 html += `
                     <li class="recentTrack" data-file-path="${escapeHtml(track.filePath)}" data-index="${index}">
                         <div class="trackCover">
@@ -401,10 +388,10 @@ function InitializeRecentMusic() {
             trackElements.forEach((element) => {
                 element.addEventListener('click', () => {
                     const filePath = element.getAttribute('data-file-path')
-                    if (filePath && window.sessionService?.approveRecentAudioPath && window.audioService) {
-                        window.sessionService.approveRecentAudioPath(filePath).then((approved) => {
+                    if (filePath) {
+                        sessionService.approveRecentAudioPath(filePath).then((approved) => {
                             if (approved) {
-                                window.audioService.startPlaylist([filePath])
+                                audioService.startPlaylist([filePath])
                             }
                         })
                     }
@@ -466,4 +453,4 @@ function InitializeRecentMusic() {
     window.appRouter?.registerCurrentRouteCleanup?.(cleanup)
 }
 
-window.InitializeRecentMusic = InitializeRecentMusic;
+window.InitializeRecentMusic = initializeRecentMusic

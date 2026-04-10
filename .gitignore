@@ -5,3 +5,5 @@ node_modules/
 dist/
 Executable/
 docs/
+.vscode/
+.prettierrc
