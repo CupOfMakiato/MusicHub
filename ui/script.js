@@ -51,6 +51,13 @@ const routeDefinitions = {
             initializePlaylistPage()
         },
     },
+    about: {
+        hostId: 'recent-music',
+        filePath: './pages/about/about-layout.html',
+        // onLoad: () => {
+        //     initializeAboutPage()
+        // },
+    },
 }
 
 async function loadComponent(elementId, filePath, onLoadCallback = null) {

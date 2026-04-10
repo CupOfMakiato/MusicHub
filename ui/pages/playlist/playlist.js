@@ -7,7 +7,6 @@ import { sessionService } from '../../services/session-service.js'
 import { audioService } from '../../services/audio-service.js'
 
 export function initializePlaylistPage() {
-    const picker = document.getElementById('playlistPicker')
     const title = document.getElementById('playlistTitle')
     const trackCountElement = document.getElementById('playlistTrackCount')
     const durationElement = document.getElementById('playlistDuration')
@@ -15,21 +14,14 @@ export function initializePlaylistPage() {
     const body = document.getElementById('playlistTrackBody')
     const playButton = document.getElementById('playlistPlayBtn')
 
-    if (
-        !picker ||
-        !title ||
-        !trackCountElement ||
-        !durationElement ||
-        !image ||
-        !body ||
-        !playButton
-    ) {
+    if (!title || !trackCountElement || !durationElement || !image || !body || !playButton) {
         return
     }
 
     let playlists = []
     let activePlaylistId = window.playlistViewState?.activePlaylistId || null
     const durationCache = new Map()
+    const durationProbePromises = new Map()
     let durationProbeRunId = 0
     let totalDurationRunId = 0
     let cleanupTrackMenuToggles = null
@@ -96,9 +88,24 @@ export function initializePlaylistPage() {
             return durationCache.get(filePath)
         }
 
-        const duration = await probeAudioDuration(filePath)
-        durationCache.set(filePath, duration)
-        return duration
+        if (durationProbePromises.has(filePath)) {
+            return durationProbePromises.get(filePath)
+        }
+
+        const probePromise = probeAudioDuration(filePath)
+            .then((duration) => {
+                durationCache.set(filePath, duration)
+                durationProbePromises.delete(filePath)
+                return duration
+            })
+            .catch((error) => {
+                durationProbePromises.delete(filePath)
+                throw error
+            })
+
+        durationProbePromises.set(filePath, probePromise)
+
+        return probePromise
     }
 
     async function hydrateTrackDurations(activePlaylist) {
@@ -156,22 +163,6 @@ export function initializePlaylistPage() {
 
     function getActivePlaylist() {
         return playlists.find((playlist) => playlist.id === activePlaylistId) || null
-    }
-
-    function renderPicker() {
-        if (!playlists.length) {
-            picker.innerHTML = '<option value="">No playlists</option>'
-            picker.disabled = true
-            return
-        }
-
-        picker.disabled = false
-        picker.innerHTML = playlists
-            .map((playlist) => {
-                const selected = playlist.id === activePlaylistId ? 'selected' : ''
-                return `<option value="${escapeHtml(playlist.id)}" ${selected}>${escapeHtml(playlist.name)}</option>`
-            })
-            .join('')
     }
 
     function renderTracks(activePlaylist) {
@@ -297,7 +288,6 @@ export function initializePlaylistPage() {
 
     function render() {
         const activePlaylist = getActivePlaylist()
-        renderPicker()
         renderHeader(activePlaylist)
         renderTracks(activePlaylist)
         renderTotalDuration(activePlaylist)
@@ -318,12 +308,6 @@ export function initializePlaylistPage() {
         window.playlistViewState = { activePlaylistId }
         render()
     }
-
-    picker.addEventListener('change', () => {
-        activePlaylistId = picker.value || null
-        window.playlistViewState = { activePlaylistId }
-        render()
-    })
 
     playButton.addEventListener('click', () => {
         const activePlaylist = getActivePlaylist()
