@@ -15,7 +15,15 @@ export function initializePlaylistPage() {
     const body = document.getElementById('playlistTrackBody')
     const playButton = document.getElementById('playlistPlayBtn')
 
-    if (!picker || !title || !image || !body || !playButton) {
+    if (
+        !picker ||
+        !title ||
+        !trackCountElement ||
+        !durationElement ||
+        !image ||
+        !body ||
+        !playButton
+    ) {
         return
     }
 
@@ -292,7 +300,8 @@ export function initializePlaylistPage() {
     }
 
     async function hydrate() {
-        playlists = await sessionService.loadUserPlaylists()
+        const loadedPlaylists = await sessionService.loadUserPlaylists()
+        playlists = Array.isArray(loadedPlaylists) ? loadedPlaylists : []
         if (!activePlaylistId && playlists.length > 0) {
             activePlaylistId = playlists[0].id
         }

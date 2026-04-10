@@ -16,6 +16,7 @@ export function initializeRecentMusic() {
         return
     }
 
+    let latestRefreshId = 0
     let cleanupTrackMenuToggles = null
 
     function resetTrackActionsMenuPosition(menu) {
@@ -310,27 +311,52 @@ export function initializeRecentMusic() {
             name: formValues.name,
         })
 
-        if (created) {
-            await sessionService.addTrackToUserPlaylist(created.id, track)
+        if (!created) {
+            return false
+        }
+
+        const added = await sessionService.addTrackToUserPlaylist(created.id, track)
+        if (added) {
             showMessage(`Created playlist: ${created.name} and added this track.`)
         }
+        // else {
+        //     showMessage(`Created playlist: ${created.name}, but failed to add this track.`)
+        // }
 
         return true
     }
 
     async function loadAndRenderRecentTracks() {
+        const refreshId = ++latestRefreshId
+        const isStaleRefresh = () => refreshId !== latestRefreshId
+
         try {
+            if (isStaleRefresh()) {
+                return
+            }
+
             if (typeof cleanupTrackMenuToggles === 'function') {
                 cleanupTrackMenuToggles()
                 cleanupTrackMenuToggles = null
             }
 
             const tracks = await sessionService.loadRecentTracks()
+            if (isStaleRefresh()) {
+                return
+            }
+
             const playlists = (await sessionService.loadUserPlaylists()) || []
+            if (isStaleRefresh()) {
+                return
+            }
+
             const hasExistingPlaylist = Array.isArray(playlists) && playlists.length > 0
             const container = recentMusic.querySelector('.recentMusicList') || recentMusic
 
             if (!tracks || tracks.length === 0) {
+                if (isStaleRefresh()) {
+                    return
+                }
                 container.innerHTML = '<p class="noRecentMusic">No recently played tracks</p>'
                 return
             }
@@ -364,8 +390,17 @@ export function initializeRecentMusic() {
                 `
             })
             html += '</ul>'
+
+            if (isStaleRefresh()) {
+                return
+            }
+
             container.innerHTML = html
             window.lucide?.createIcons()
+
+            if (isStaleRefresh()) {
+                return
+            }
 
             cleanupTrackMenuToggles = attachIndexedMenuToggle({
                 scope: recentMusic,
@@ -410,6 +445,9 @@ export function initializeRecentMusic() {
                 action: handleCreatePlaylistAction,
             })
         } catch (error) {
+            if (isStaleRefresh()) {
+                return
+            }
             console.error('Failed to load recent tracks:', error)
         }
     }
