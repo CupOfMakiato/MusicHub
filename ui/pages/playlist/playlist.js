@@ -201,25 +201,25 @@ export function initializePlaylistPage() {
                         ? track.duration
                         : durationCache.get(track?.filePath)
                 return `
-<tr class="playlistTrackRow" data-track-index="${index}">
-<td>${index + 1}</td>
-<td>${escapeHtml(trackTitle)}</td>
-<td>${escapeHtml(artist)}</td>
-<td>${escapeHtml(album)}</td>
-<td>${dateAdded}</td>
-<td data-duration-index="${index}">${formatDurationClock(duration)}</td>
-<td>
-<div class="playlistTrackActions">
-<button type="button" class="playlistTrackMoreBtn" data-track-index="${index}" aria-label="Track actions">
-<i data-lucide="ellipsis"></i>
-</button>
-<div class="playlistTrackMenu" data-track-index="${index}">
-<button type="button" class="removeTrackBtn" data-track-index="${index}">Remove from Playlist</button>
-</div>
-</div>
-</td>
-</tr>
-`
+					<tr class="playlistTrackRow" data-track-index="${index}">
+					<td>${index + 1}</td>
+					<td>${escapeHtml(trackTitle)}</td>
+					<td>${escapeHtml(artist)}</td>
+					<td>${escapeHtml(album)}</td>
+					<td>${dateAdded}</td>
+					<td data-duration-index="${index}">${formatDurationClock(duration)}</td>
+					<td>
+					<div class="playlistTrackActions">
+					<button type="button" class="playlistTrackMoreBtn" data-track-index="${index}" aria-label="Track actions">
+					<i data-lucide="ellipsis"></i>
+					</button>
+					<div class="playlistTrackMenu" data-track-index="${index}">
+					<button type="button" class="removeTrackBtn" data-track-index="${index}">Remove from Playlist</button>
+					</div>
+					</div>
+					</td>
+					</tr>
+					`
             })
             .join('')
 
@@ -261,8 +261,13 @@ export function initializePlaylistPage() {
                     }
                 })
 
+                const saved = await sessionService.saveUserPlaylists(updatedPlaylists)
+                if (!saved) {
+                    console.error('Failed to save updated playlists when removing track')
+                    return
+                }
+
                 playlists = updatedPlaylists
-                await sessionService.saveUserPlaylists(updatedPlaylists)
                 activePlaylistId = activePlaylist.id
                 window.playlistViewState = { activePlaylistId }
                 render()
