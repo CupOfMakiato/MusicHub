@@ -1,8 +1,17 @@
-import { escapeHtml, attachIndexedMenuToggle, bindImageFallback } from '../../utils/dom-helpers.js'
+import {
+    escapeHtml,
+    attachIndexedMenuToggle,
+    bindImageFallback,
+    bindImageFallbacks,
+} from '../../utils/dom-helpers.js'
 import { formatDate } from '../../utils/date.js'
 import { formatDurationClock, formatDurationVerbose } from '../../utils/duration.js'
 import { toFileUrl, getBaseName } from '../../utils/file-path.js'
-import { resolvePlaylistImage, extractPlaylistFilePaths } from '../../utils/playlist-media.js'
+import {
+    resolvePlaylistImage,
+    extractPlaylistFilePaths,
+    resolveTrackImage,
+} from '../../utils/playlist-media.js'
 import { sessionService } from '../../services/session-service.js'
 import { audioService } from '../../services/audio-service.js'
 import { isRouteActive } from '../../utils/route.js'
@@ -182,6 +191,7 @@ export function initializePlaylistPage() {
                 const trackTitle = track?.title || getBaseName(track?.filePath)
                 const artist = track?.artist || 'Unknown Artist'
                 const album = track?.album || 'Unknown Album'
+                const trackImage = resolveTrackImage(track) || './assets/music-placeholder.png'
                 const dateAdded = formatDate(track?.playedAt || track?.addedAt)
                 const duration =
                     typeof track?.duration === 'number' && track.duration > 0
@@ -189,8 +199,23 @@ export function initializePlaylistPage() {
                         : durationCache.get(track?.filePath)
                 return `
 					<tr class="playlistTrackRow" data-track-index="${index}">
-					<td>${index + 1}</td>
-					<td>${escapeHtml(trackTitle)}</td>
+                    <td class="playlistTrackIndexCell">
+                    <button
+                        type="button"
+                        class="playlistTrackIndexPlayBtn"
+                        data-track-index="${index}"
+                        aria-label="Play from track ${index + 1}"
+                    >
+                        <span class="playlistTrackIndexValue">${index + 1}</span>
+                        <i data-lucide="play" class="playlistTrackIndexPlayIcon" aria-hidden="true"></i>
+                    </button>
+                    </td>
+                    <td class="playlistTrackTitleCell">
+                    <div class="playlistTrackTitleWrap">
+                    <img class="playlistTrackCover" src="${escapeHtml(trackImage)}" alt="Track cover" draggable="false" />
+                    <span class="playlistTrackTitleText">${escapeHtml(trackTitle)}</span>
+                    </div>
+                    </td>
 					<td>${escapeHtml(artist)}</td>
 					<td>${escapeHtml(album)}</td>
 					<td>${dateAdded}</td>
@@ -212,6 +237,10 @@ export function initializePlaylistPage() {
 
         hydrateTrackDurations(activePlaylist)
         window.lucide?.createIcons()
+        bindImageFallbacks({
+            scope: body,
+            selector: '.playlistTrackCover',
+        })
 
         cleanupTrackMenuToggles = attachIndexedMenuToggle({
             scope: body,
@@ -258,6 +287,33 @@ export function initializePlaylistPage() {
                 activePlaylistId = activePlaylist.id
                 window.playlistViewState = { activePlaylistId }
                 render()
+            })
+        })
+
+        const indexPlayButtons = body.querySelectorAll('.playlistTrackIndexPlayBtn')
+        indexPlayButtons.forEach((button) => {
+            button.addEventListener('click', (event) => {
+                event.stopPropagation()
+                event.preventDefault()
+
+                const trackIndex = Number(button.getAttribute('data-track-index'))
+                const activePlaylist = getActivePlaylist()
+                if (!activePlaylist || !Number.isInteger(trackIndex)) {
+                    return
+                }
+
+                const queueFilePaths = Array.isArray(activePlaylist.tracks)
+                    ? activePlaylist.tracks
+                          .slice(trackIndex)
+                          .map((track) => track?.filePath)
+                          .filter(Boolean)
+                    : []
+
+                if (!queueFilePaths.length) {
+                    return
+                }
+
+                audioService.startPlaylist(queueFilePaths)
             })
         })
     }

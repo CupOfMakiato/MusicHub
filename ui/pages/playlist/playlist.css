@@ -145,6 +145,97 @@
     font-size: 13px;
 }
 
+.playlistTrackIndexCell {
+    width: 56px;
+}
+
+.playlistTrackIndexPlayBtn {
+    width: 30px;
+    height: 30px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: #1f2937;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+    overflow: hidden;
+}
+
+.playlistTrackIndexPlayBtn:hover {
+    background: #edf2f7;
+}
+
+.playlistTrackIndexValue {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 140ms ease;
+    pointer-events: none;
+}
+
+.playlistTrackIndexPlayIcon {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 16px;
+    height: 16px;
+    transform: translate(-50%, -50%);
+    transition: opacity 140ms ease;
+    pointer-events: none;
+    opacity: 0;
+}
+
+.playlistTrackIndexPlayIcon svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+.playlistTrackRow:hover .playlistTrackIndexValue,
+.playlistTrackRow:focus-within .playlistTrackIndexValue {
+    opacity: 0;
+}
+
+.playlistTrackRow:hover .playlistTrackIndexPlayIcon,
+.playlistTrackRow:focus-within .playlistTrackIndexPlayIcon {
+    opacity: 1;
+}
+
+.playlistTrackTable th:nth-child(2),
+.playlistTrackTitleCell {
+    text-align: left;
+}
+
+.playlistTrackTitleWrap {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.playlistTrackCover {
+    width: 38px;
+    height: 38px;
+    border-radius: 8px;
+    object-fit: cover;
+    background: #edf2f7;
+    flex-shrink: 0;
+}
+
+.playlistTrackTitleText {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .playlistTrackTable p {
     font-size: small;
     font-weight: normal;
