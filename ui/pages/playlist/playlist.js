@@ -1,10 +1,11 @@
-import { escapeHtml, attachIndexedMenuToggle } from '../../utils/dom-helpers.js'
+import { escapeHtml, attachIndexedMenuToggle, bindImageFallback } from '../../utils/dom-helpers.js'
 import { formatDate } from '../../utils/date.js'
 import { formatDurationClock, formatDurationVerbose } from '../../utils/duration.js'
 import { toFileUrl, getBaseName } from '../../utils/file-path.js'
-import { resolvePlaylistImage } from '../../utils/playlist-media.js'
+import { resolvePlaylistImage, extractPlaylistFilePaths } from '../../utils/playlist-media.js'
 import { sessionService } from '../../services/session-service.js'
 import { audioService } from '../../services/audio-service.js'
+import { isRouteActive } from '../../utils/route.js'
 
 export function initializePlaylistPage() {
     const title = document.getElementById('playlistTitle')
@@ -33,11 +34,6 @@ export function initializePlaylistPage() {
         }
 
         window.lucide?.createIcons({ nodes: [playButton] })
-    }
-
-    function isPlaylistRouteActive() {
-        const route = window.appRouter?.getCurrentRoute?.()
-        return route === 'playlist' || route === 'queue'
     }
 
     function probeAudioDuration(filePath) {
@@ -271,6 +267,7 @@ export function initializePlaylistPage() {
             title.textContent = 'No playlist selected'
             trackCountElement.textContent = 'Choose a playlist from your library.'
             durationElement.textContent = ''
+            bindImageFallback(image)
             image.src = './assets/music-placeholder.png'
             return
         }
@@ -280,10 +277,8 @@ export function initializePlaylistPage() {
         const trackCount = activePlaylist.tracks?.length || 0
         trackCountElement.textContent = `${trackCount} ${trackCount === 1 ? 'song' : 'songs'}`
 
+        bindImageFallback(image)
         image.src = playlistImage
-        image.onerror = () => {
-            image.src = './assets/music-placeholder.png'
-        }
     }
 
     function render() {
@@ -311,9 +306,7 @@ export function initializePlaylistPage() {
 
     playButton.addEventListener('click', () => {
         const activePlaylist = getActivePlaylist()
-        const filePaths = Array.isArray(activePlaylist?.tracks)
-            ? activePlaylist.tracks.map((track) => track?.filePath).filter(Boolean)
-            : []
+        const filePaths = extractPlaylistFilePaths(activePlaylist)
         if (!filePaths.length) {
             return
         }
@@ -322,7 +315,7 @@ export function initializePlaylistPage() {
     })
 
     const onPlaylistsUpdated = () => {
-        if (isPlaylistRouteActive()) {
+        if (isRouteActive(['playlist', 'queue'])) {
             hydrate()
         }
     }

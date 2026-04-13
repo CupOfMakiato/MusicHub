@@ -1,16 +1,13 @@
-import { escapeHtml } from '../../utils/dom-helpers.js'
-import { resolvePlaylistImage } from '../../utils/playlist-media.js'
+import { escapeHtml, bindImageFallbacks } from '../../utils/dom-helpers.js'
+import { resolvePlaylistImage, extractPlaylistFilePaths } from '../../utils/playlist-media.js'
 import { sessionService } from '../../services/session-service.js'
 import { audioService } from '../../services/audio-service.js'
+import { isRouteActive } from '../../utils/route.js'
 
 export function initializeLibraryPage() {
     const container = document.getElementById('libraryPlaylists')
     if (!container) {
         return
-    }
-
-    function isLibraryRouteActive() {
-        return window.appRouter?.getCurrentRoute?.() === 'library'
     }
 
     async function render() {
@@ -28,7 +25,7 @@ export function initializeLibraryPage() {
                 const canPlay = trackCount > 0
                 return `
                 <article class="libraryPlaylistCard" data-playlist-id="${escapeHtml(playlist.id)}" role="button" tabindex="0" aria-label="Open playlist ${escapeHtml(playlist.name)}">
-                    <img src="${escapeHtml(banner)}" alt="${escapeHtml(playlist.name)}" onerror="this.src='./assets/music-placeholder.png'">
+                    <img src="${escapeHtml(banner)}" alt="${escapeHtml(playlist.name)}">
                     <div class="libraryPlaylistContent">
                         <h3>${escapeHtml(playlist.name)}</h3>
                         <p>${trackCount} songs</p>
@@ -42,6 +39,11 @@ export function initializeLibraryPage() {
             `
             })
             .join('')
+
+        bindImageFallbacks({
+            scope: container,
+            selector: '.libraryPlaylistCard img',
+        })
 
         window.lucide?.createIcons()
 
@@ -86,9 +88,7 @@ export function initializeLibraryPage() {
                 }
 
                 const selectedPlaylist = playlists.find((playlist) => playlist.id === playlistId)
-                const filePaths = Array.isArray(selectedPlaylist?.tracks)
-                    ? selectedPlaylist.tracks.map((track) => track?.filePath).filter(Boolean)
-                    : []
+                const filePaths = extractPlaylistFilePaths(selectedPlaylist)
 
                 if (!filePaths.length) {
                     return
@@ -104,7 +104,7 @@ export function initializeLibraryPage() {
 
     const onPlaylistsUpdated = () => {
         // Only re-render if we're currently viewing the library page
-        if (isLibraryRouteActive()) {
+        if (isRouteActive('library')) {
             render()
         }
     }

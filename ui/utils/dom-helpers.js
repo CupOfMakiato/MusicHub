@@ -1,13 +1,12 @@
+const DEFAULT_IMAGE_FALLBACK_SRC = './assets/music-placeholder.png'
+
 export function escapeHtml(text) {
     const div = document.createElement('div')
     div.textContent = String(text ?? '')
     return div.innerHTML
 }
 
-export function getOrCreateModalHost({
-    scope,
-    hostClass = 'recentMusicModalHost',
-}) {
+export function getOrCreateModalHost({ scope, hostClass = 'recentMusicModalHost' }) {
     if (!scope || !hostClass) {
         return null
     }
@@ -23,10 +22,7 @@ export function getOrCreateModalHost({
     return modalHost
 }
 
-export function closeModalHost({
-    scope,
-    hostClass = 'recentMusicModalHost',
-}) {
+export function closeModalHost({ scope, hostClass = 'recentMusicModalHost' }) {
     if (!scope || !hostClass) {
         return
     }
@@ -40,11 +36,7 @@ export function closeModalHost({
     modalHost.classList.remove('is-open')
 }
 
-export function openModal({
-    scope,
-    contentHtml,
-    hostClass = 'recentMusicModalHost',
-}) {
+export function openModal({ scope, contentHtml, hostClass = 'recentMusicModalHost' }) {
     const modalHost = getOrCreateModalHost({ scope, hostClass })
     if (!modalHost) {
         return {
@@ -91,13 +83,7 @@ export function showModalPrompt({
     })
 }
 
-export function bindModalResolve({
-    modalHost,
-    selector,
-    resolve,
-    value = null,
-    getValue,
-}) {
+export function bindModalResolve({ modalHost, selector, resolve, value = null, getValue }) {
     if (!modalHost || !selector || typeof resolve !== 'function') {
         return
     }
@@ -143,7 +129,9 @@ export function attachIndexedMenuToggle({
             event.stopPropagation()
 
             const menuIndex = button.getAttribute(indexAttribute)
-            const targetMenu = scope.querySelector(`${menuSelector}[${indexAttribute}="${menuIndex}"]`)
+            const targetMenu = scope.querySelector(
+                `${menuSelector}[${indexAttribute}="${menuIndex}"]`,
+            )
             if (!targetMenu) {
                 return
             }
@@ -173,6 +161,50 @@ export function attachIndexedMenuToggle({
     }
 }
 
+function resolveFallbackSrc(fallbackSrc) {
+    if (typeof fallbackSrc === 'string' && fallbackSrc.trim()) {
+        return fallbackSrc.trim()
+    }
+
+    return DEFAULT_IMAGE_FALLBACK_SRC
+}
+
+export function bindImageFallback(imageElement, fallbackSrc = DEFAULT_IMAGE_FALLBACK_SRC) {
+    if (!imageElement) {
+        return
+    }
+
+    const resolvedFallbackSrc = resolveFallbackSrc(fallbackSrc)
+
+    delete imageElement.dataset.fallbackApplied
+    imageElement.onerror = () => {
+        if (imageElement.dataset.fallbackApplied === 'true') {
+            imageElement.onerror = null
+            return
+        }
+
+        imageElement.dataset.fallbackApplied = 'true'
+        imageElement.src = resolvedFallbackSrc
+    }
+}
+
+export function bindImageFallbacks({
+    scope,
+    selector = 'img',
+    fallbackSrc = DEFAULT_IMAGE_FALLBACK_SRC,
+}) {
+    if (!scope || !selector) {
+        return
+    }
+
+    const resolvedFallbackSrc = resolveFallbackSrc(fallbackSrc)
+
+    const images = scope.querySelectorAll(selector)
+    images.forEach((image) => {
+        bindImageFallback(image, resolvedFallbackSrc)
+    })
+}
+
 export const domHelpers = {
     escapeHtml,
     getOrCreateModalHost,
@@ -181,6 +213,8 @@ export const domHelpers = {
     showModalPrompt,
     bindModalResolve,
     attachIndexedMenuToggle,
+    bindImageFallback,
+    bindImageFallbacks,
 }
 
 window.domHelpers = domHelpers

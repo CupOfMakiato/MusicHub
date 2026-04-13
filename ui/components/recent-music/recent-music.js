@@ -5,9 +5,11 @@ import {
     closeModalHost,
     showModalPrompt,
     bindModalResolve,
+    bindImageFallbacks,
 } from '../../utils/dom-helpers.js'
 import { sessionService } from '../../services/session-service.js'
 import { audioService } from '../../services/audio-service.js'
+import { isRouteActive } from '../../utils/route.js'
 
 export function initializeRecentMusic() {
     const recentMusic = document.getElementById('recent-music')
@@ -76,10 +78,6 @@ export function initializeRecentMusic() {
             menu.classList.remove('is-open')
             resetTrackActionsMenuPosition(menu)
         })
-    }
-
-    function isHomeRouteActive() {
-        return (window.appRouter?.getCurrentRoute?.() || 'home') === 'home'
     }
 
     function showMessage(message) {
@@ -369,9 +367,8 @@ export function initializeRecentMusic() {
                 html += `
                     <li class="recentTrack" data-file-path="${escapeHtml(track.filePath)}" data-index="${index}">
                         <div class="trackCover">
-                            <img src="${escapeHtml(track.image || './assets/music-placeholder.png')}" 
-                                 alt="${escapeHtml(title)}"
-                                 onerror="this.src='./assets/music-placeholder.png'">
+                               <img src="${escapeHtml(track.image || './assets/music-placeholder.png')}" 
+                                   alt="${escapeHtml(title)}">
                         </div>
                         <div class="trackDetails">
                             <div class="trackTitle">${escapeHtml(title)}</div>
@@ -396,6 +393,10 @@ export function initializeRecentMusic() {
             }
 
             container.innerHTML = html
+            bindImageFallbacks({
+                scope: container,
+                selector: '.trackCover img',
+            })
             window.lucide?.createIcons()
 
             if (isStaleRefresh()) {
@@ -426,7 +427,7 @@ export function initializeRecentMusic() {
                     if (filePath) {
                         sessionService.approveRecentAudioPath(filePath).then((approved) => {
                             if (approved) {
-                                audioService.startPlaylist([filePath])
+                                audioService.startSingleTrack(filePath)
                             }
                         })
                     }
@@ -457,14 +458,14 @@ export function initializeRecentMusic() {
 
     // Reload only when recent tracks are updated.
     const onRecentTracksUpdated = () => {
-        if (!isHomeRouteActive()) {
+        if (!isRouteActive('home')) {
             return
         }
         loadAndRenderRecentTracks()
     }
 
     const onUserPlaylistsUpdated = () => {
-        if (!isHomeRouteActive()) {
+        if (!isRouteActive('home')) {
             return
         }
         loadAndRenderRecentTracks()

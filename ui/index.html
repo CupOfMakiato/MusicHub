@@ -1,42 +1,47 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
-  <head>
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=DynaPuff&family=Noto+Sans:ital,wght@0,100..900;1,100..900&family=Rubik:ital,wght@0,300..900;1,300..900&display=swap');
-    </style>
-    <meta charset="UTF-8" />
-    <link rel="stylesheet" href="./ui.css" />
-    <link rel="stylesheet" href="./components/bottom-player/player.css" />
-    <link rel="stylesheet" href="./components/recent-music/recent-music.css" />
-    <link rel="stylesheet" href="./pages/library/library.css" />
-    <link rel="stylesheet" href="./pages/playlist/playlist.css" />
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <script src="https://unpkg.com/howler@2.2.4/dist/howler.min.js"></script>
-    <script src="https://unpkg.com/jsmediatags@3.9.7/dist/jsmediatags.min.js"></script>
-    <!-- <meta
+    <head>
+        <style>
+            @import url('https://fonts.googleapis.com/css2?family=DynaPuff&family=Noto+Sans:ital,wght@0,100..900;1,100..900&family=Rubik:ital,wght@0,300..900;1,300..900&display=swap');
+        </style>
+        <meta charset="UTF-8" />
+        <link rel="stylesheet" href="./ui.css" />
+        <link rel="stylesheet" href="./components/bottom-player/player.css" />
+        <link rel="stylesheet" href="./components/recent-music/recent-music.css" />
+        <link rel="stylesheet" href="./pages/library/library.css" />
+        <link rel="stylesheet" href="./pages/playlist/playlist.css" />
+        <link rel="stylesheet" href="./pages/queue/queue.css" />
+        <script src="https://unpkg.com/lucide@latest"></script>
+        <script src="https://unpkg.com/howler@2.2.4/dist/howler.min.js"></script>
+        <script src="https://unpkg.com/jsmediatags@3.9.7/dist/jsmediatags.min.js"></script>
+        <!-- <meta
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self'"
     /> -->
-    <meta
-      http-equiv="X-Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'"
-    />
-    
-    <title>Blueberry Player</title>
-  </head>
-  <body>
-    <!-- <h1>first start of BlueberryPlayer</h1> -->
+        <meta
+            http-equiv="X-Content-Security-Policy"
+            content="default-src 'self'; script-src 'self'"
+        />
 
-    <div id="sidebar"></div> 
-    <div id="recent-music"></div>
-    <img id="coverImage" src="./assets/music-placeholder.png" alt="Album cover" draggable="false"/>
-    <h2 id="trackTitle">No track selected</h2>
-    <p id="trackArtist">Select a file to start playing</p>
+        <title>Blueberry Player</title>
+    </head>
+    <body>
+        <!-- <h1>first start of BlueberryPlayer</h1> -->
 
-    <button id="selectFile">Select File</button>
-    <button id="selectFolder">Select Folder</button>
-    <div id="bottom-player"></div>
-    <script type="module" src="./script.js"></script>
-  </body>
-  
+        <div id="sidebar"></div>
+        <div id="recent-music"></div>
+        <img
+            id="coverImage"
+            src="./assets/music-placeholder.png"
+            alt="Album cover"
+            draggable="false"
+        />
+        <h2 id="trackTitle">No track selected</h2>
+        <p id="trackArtist">Select a file to start playing</p>
+
+        <button id="selectFile">Select File</button>
+        <button id="selectFolder">Select Folder</button>
+        <div id="bottom-player"></div>
+        <script type="module" src="./script.js"></script>
+    </body>
 </html>

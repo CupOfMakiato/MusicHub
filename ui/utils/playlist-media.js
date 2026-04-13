@@ -26,10 +26,19 @@ export function resolvePlaylistImage(playlist) {
     return resolveTrackImage(firstTrackWithImage) || DEFAULT_PLAYLIST_IMAGE
 }
 
+export function extractPlaylistFilePaths(playlist) {
+    if (!playlist || !Array.isArray(playlist.tracks)) {
+        return []
+    }
+
+    return playlist.tracks.map((track) => track?.filePath).filter(Boolean)
+}
+
 export const playlistMediaUtils = {
     DEFAULT_PLAYLIST_IMAGE,
     resolveTrackImage,
     resolvePlaylistImage,
+    extractPlaylistFilePaths,
 }
 
 window.playlistMediaUtils = playlistMediaUtils

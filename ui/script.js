@@ -1,9 +1,11 @@
 import { playerState } from './state/player-state.js'
 import { sessionService } from './services/session-service.js'
 import { audioService } from './services/audio-service.js'
+import { bindImageFallback } from './utils/dom-helpers.js'
 import { initializeRecentMusic } from './components/recent-music/recent-music.js'
 import { initializeLibraryPage } from './pages/library/library.js'
 import { initializePlaylistPage } from './pages/playlist/playlist.js'
+import { initializeQueuePage } from './pages/queue/queue.js'
 import { initializePlayer } from './components/bottom-player/player.js'
 
 const selectFileButton = document.getElementById('selectFile')
@@ -46,9 +48,9 @@ const routeDefinitions = {
     },
     queue: {
         hostId: 'recent-music',
-        filePath: './pages/playlist/playlist-layout.html',
+        filePath: './pages/queue/queue-layout.html',
         onLoad: () => {
-            initializePlaylistPage()
+            initializeQueuePage()
         },
     },
     about: {
@@ -233,9 +235,7 @@ function updateTrackInfoFromState() {
 }
 
 if (coverImage) {
-    coverImage.addEventListener('error', () => {
-        coverImage.src = placeholderCover
-    })
+    bindImageFallback(coverImage)
 }
 
 function startStateSync() {
@@ -297,7 +297,7 @@ selectFileButton?.addEventListener('click', async () => {
             return
         }
 
-        audioService.startPlaylist([selectedFile])
+        audioService.startSingleTrack(selectedFile)
     } catch (error) {
         console.error('Failed to select or play audio file:', error)
     }
