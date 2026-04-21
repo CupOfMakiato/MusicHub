@@ -1,4 +1,9 @@
-import { escapeHtml, bindImageFallbacks } from '../../utils/dom-helpers.js'
+import {
+    escapeHtml,
+    bindImageFallbacks,
+    placeFloatingElement,
+    bindGlobalDismissEvents,
+} from '../../utils/dom-helpers.js'
 import { resolvePlaylistImage, extractPlaylistFilePaths } from '../../utils/playlist-media.js'
 import { sessionService } from '../../services/session-service.js'
 import { audioService } from '../../services/audio-service.js'
@@ -9,6 +14,102 @@ export function initializeLibraryPage() {
     if (!container) {
         return
     }
+
+    let contextMenu = null
+    let contextMenuPlaylistId = null
+
+    function closeContextMenu() {
+        contextMenuPlaylistId = null
+        if (!contextMenu) {
+            return
+        }
+
+        contextMenu.classList.remove('is-open')
+    }
+
+    function ensureContextMenu() {
+        if (contextMenu?.isConnected) {
+            return contextMenu
+        }
+
+        contextMenu = document.createElement('div')
+        contextMenu.className = 'libraryContextMenu'
+        contextMenu.innerHTML =
+            '<button type="button" class="deletePlaylistMenuBtn" role="menuitem">Delete Playlist</button>'
+
+        contextMenu.addEventListener('click', async (event) => {
+            event.stopPropagation()
+
+            const deleteButton = event.target.closest('.deletePlaylistMenuBtn')
+            if (!deleteButton || !contextMenuPlaylistId) {
+                return
+            }
+
+            const playlistIdToDelete = contextMenuPlaylistId
+            closeContextMenu()
+
+            const playlists = await sessionService.loadUserPlaylists()
+            if (!Array.isArray(playlists) || playlists.length === 0) {
+                return
+            }
+
+            const nextPlaylists = playlists.filter((playlist) => playlist.id !== playlistIdToDelete)
+            if (nextPlaylists.length === playlists.length) {
+                return
+            }
+
+            const saved = await sessionService.saveUserPlaylists(nextPlaylists)
+            if (!saved) {
+                console.error('Failed to delete playlist from library context menu')
+                return
+            }
+
+            if (window.playlistViewState?.activePlaylistId === playlistIdToDelete) {
+                window.playlistViewState = {
+                    activePlaylistId: nextPlaylists[0]?.id || null,
+                }
+            }
+        })
+
+        container.appendChild(contextMenu)
+        return contextMenu
+    }
+
+    function showContextMenu({ playlistId, clientX, clientY }) {
+        if (!playlistId) {
+            return
+        }
+
+        const menu = ensureContextMenu()
+        if (!menu) {
+            return
+        }
+
+        contextMenuPlaylistId = playlistId
+        menu.classList.add('is-open')
+
+        const viewportPadding = 8
+        const menuWidth = menu.offsetWidth || 180
+        const menuHeight = menu.offsetHeight || 42
+
+        placeFloatingElement({
+            element: menu,
+            left: clientX,
+            top: clientY,
+            widthFallback: menuWidth,
+            heightFallback: menuHeight,
+            padding: viewportPadding,
+            position: 'fixed',
+        })
+    }
+
+    const cleanupContextMenuDismiss = bindGlobalDismissEvents({
+        onDismiss: closeContextMenu,
+        closeOnClick: true,
+        closeOnScroll: true,
+        closeOnResize: true,
+        scrollCapture: true,
+    })
 
     async function render() {
         const playlists = await sessionService.loadUserPlaylists()
@@ -75,6 +176,18 @@ export function initializeLibraryPage() {
                 event.preventDefault()
                 await openPlaylistFromCard(card)
             })
+
+            card.addEventListener('contextmenu', (event) => {
+                event.preventDefault()
+                event.stopPropagation()
+
+                const playlistId = card.getAttribute('data-playlist-id')
+                showContextMenu({
+                    playlistId,
+                    clientX: event.clientX,
+                    clientY: event.clientY,
+                })
+            })
         })
 
         const playButtons = container.querySelectorAll('.playPlaylistBtn')
@@ -113,6 +226,10 @@ export function initializeLibraryPage() {
 
     const cleanup = () => {
         window.removeEventListener('user-playlists:updated', onPlaylistsUpdated)
+        cleanupContextMenuDismiss()
+        closeContextMenu()
+        contextMenu?.remove()
+        contextMenu = null
     }
 
     window.appRouter?.registerCurrentRouteCleanup?.(cleanup)

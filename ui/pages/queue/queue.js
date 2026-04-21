@@ -1,6 +1,7 @@
 import { playerState } from '../../state/player-state.js'
 import { audioService } from '../../services/audio-service.js'
-import { escapeHtml, bindImageFallbacks } from '../../utils/dom-helpers.js'
+import { escapeHtml, bindImageFallbacks, getDataAttributeIndex } from '../../utils/dom-helpers.js'
+import { DEFAULT_TRACK_TITLE, DEFAULT_TRACK_ARTIST } from '../../utils/track-record.js'
 
 export function initializeQueuePage() {
     const nowPlayingList = document.getElementById('queueNowPlaying')
@@ -41,8 +42,8 @@ export function initializeQueuePage() {
 						draggable="false"
 					/>
 					<span class="queueInfo">
-						<span class="queueTitle">${escapeHtml(title || 'Unknown Title')}</span>
-						<span class="queueArtist">${escapeHtml(artist || 'Unknown Artist')}</span>
+                        <span class="queueTitle">${escapeHtml(title || DEFAULT_TRACK_TITLE)}</span>
+                        <span class="queueArtist">${escapeHtml(artist || DEFAULT_TRACK_ARTIST)}</span>
 					</span>
 				</button>
 			</li>
@@ -53,8 +54,8 @@ export function initializeQueuePage() {
         const buttons = scopeElement.querySelectorAll('.queueItemButton')
         buttons.forEach((button) => {
             button.addEventListener('click', () => {
-                const index = Number(button.getAttribute('data-track-index'))
-                if (Number.isInteger(index) && index >= 0) {
+                const index = getDataAttributeIndex(button, 'data-track-index')
+                if (index !== null) {
                     audioService.playTrackAtIndex(index)
                 }
             })
@@ -73,11 +74,11 @@ export function initializeQueuePage() {
         )
 
         if (titleEl) {
-            titleEl.textContent = metadata?.title || 'Unknown Title'
+            titleEl.textContent = metadata?.title || DEFAULT_TRACK_TITLE
         }
 
         if (artistEl) {
-            artistEl.textContent = metadata?.artist || 'Unknown Artist'
+            artistEl.textContent = metadata?.artist || DEFAULT_TRACK_ARTIST
         }
 
         if (coverEl && metadata?.image) {

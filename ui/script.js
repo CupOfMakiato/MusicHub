@@ -327,6 +327,15 @@ openFolderButton?.addEventListener('click', async () => {
             return
         }
 
+        sessionService
+            .prependRecentFolderPlaylist({
+                folderPath: selectedFolder,
+                tracks: files,
+            })
+            .catch((error) => {
+                console.error('Failed to persist recent folder playlist:', error)
+            })
+
         audioService.startPlaylist(files)
     } catch (error) {
         console.error('Failed to open folder or play playlist:', error)

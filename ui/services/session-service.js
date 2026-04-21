@@ -1,7 +1,76 @@
+import { getBaseName } from '../utils/file-path.js'
+import { normalizeTrackRecord } from '../utils/track-record.js'
+
 export const sessionService = (() => {
     const DEFAULT_VOLUME = 0.7
     const MAX_RECENT_TRACKS = 10
+    const MAX_RECENT_FOLDER_PLAYLISTS = 8
+    const MAX_RECENT_FOLDER_TRACKS = 300
     const USER_PLAYLISTS_KEY = 'musichub:user-playlists'
+    const RECENT_FOLDER_PLAYLISTS_KEY = 'musichub:recent-folder-playlists'
+
+    function normalizeRecentFolderPlaylistTracks(tracks) {
+        if (!Array.isArray(tracks)) {
+            return []
+        }
+
+        const uniqueTrackPaths = new Set()
+        return tracks
+            .map((track) => normalizeTrackRecord(track))
+            .filter((track) => {
+                if (!track?.filePath || uniqueTrackPaths.has(track.filePath)) {
+                    return false
+                }
+
+                uniqueTrackPaths.add(track.filePath)
+                return true
+            })
+            .slice(0, MAX_RECENT_FOLDER_TRACKS)
+    }
+
+    function parseIsoDateToNumber(value) {
+        const parsed = Date.parse(value)
+        return Number.isFinite(parsed) ? parsed : 0
+    }
+
+    function normalizeRecentFolderPlaylists(playlists) {
+        if (!Array.isArray(playlists)) {
+            return []
+        }
+
+        return playlists
+            .map((playlist) => {
+                const folderPath =
+                    typeof playlist?.folderPath === 'string' ? playlist.folderPath.trim() : ''
+                if (!folderPath) {
+                    return null
+                }
+
+                const tracks = normalizeRecentFolderPlaylistTracks(playlist?.tracks)
+                if (!tracks.length) {
+                    return null
+                }
+
+                const now = new Date().toISOString()
+                return {
+                    id:
+                        typeof playlist?.id === 'string' && playlist.id.trim()
+                            ? playlist.id.trim()
+                            : `recent-folder-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
+                    folderPath,
+                    name:
+                        typeof playlist?.name === 'string' && playlist.name.trim()
+                            ? playlist.name.trim()
+                            : getBaseName(folderPath, 'Folder Playlist'),
+                    tracks,
+                    createdAt: typeof playlist?.createdAt === 'string' ? playlist.createdAt : now,
+                    updatedAt: typeof playlist?.updatedAt === 'string' ? playlist.updatedAt : now,
+                }
+            })
+            .filter(Boolean)
+            .sort((a, b) => parseIsoDateToNumber(b.updatedAt) - parseIsoDateToNumber(a.updatedAt))
+            .slice(0, MAX_RECENT_FOLDER_PLAYLISTS)
+    }
 
     function normalizeVolume(value) {
         const parsed = Number(value)
@@ -164,13 +233,7 @@ export const sessionService = (() => {
                         : 'Untitled Playlist',
                 banner: typeof playlist?.banner === 'string' ? playlist.banner : '',
                 tracks: Array.isArray(playlist?.tracks)
-                    ? playlist.tracks
-                          .filter((track) => Boolean(track?.filePath))
-                          .map((track) => ({
-                              ...track,
-                              album:
-                                  typeof track?.album === 'string' ? track.album : 'Unknown Album',
-                          }))
+                    ? playlist.tracks.map((track) => normalizeTrackRecord(track)).filter(Boolean)
                     : [],
                 createdAt:
                     typeof playlist?.createdAt === 'string'
@@ -212,7 +275,20 @@ export const sessionService = (() => {
     }
 
     async function addTrackToUserPlaylist(playlistId, track) {
-        if (!playlistId || !track?.filePath) {
+        if (!playlistId) {
+            return false
+        }
+
+        return addTracksToUserPlaylist(playlistId, [track])
+    }
+
+    async function addTracksToUserPlaylist(playlistId, tracks) {
+        if (!playlistId || !Array.isArray(tracks)) {
+            return false
+        }
+
+        const normalizedTracks = tracks.map((track) => normalizeTrackRecord(track)).filter(Boolean)
+        if (!normalizedTracks.length) {
             return false
         }
 
@@ -222,9 +298,25 @@ export const sessionService = (() => {
             return false
         }
 
-        const exists = target.tracks.some((item) => item.filePath === track.filePath)
-        if (!exists) {
+        if (!Array.isArray(target.tracks)) {
+            target.tracks = []
+        }
+
+        const existingTrackPaths = new Set(
+            target.tracks.map((item) => item?.filePath).filter(Boolean),
+        )
+        let appended = false
+        normalizedTracks.forEach((track) => {
+            if (existingTrackPaths.has(track.filePath)) {
+                return
+            }
+
             target.tracks.push(track)
+            existingTrackPaths.add(track.filePath)
+            appended = true
+        })
+
+        if (appended) {
             target.updatedAt = new Date().toISOString()
         }
 
@@ -251,7 +343,27 @@ export const sessionService = (() => {
     }
 
     async function createPlaylistAndAddTrack({ name, banner = '', track }) {
-        if (!track?.filePath) {
+        return createUserPlaylistWithTracks({
+            name,
+            banner,
+            tracks: [track],
+        })
+    }
+
+    async function createUserPlaylistWithTracks({ name, banner = '', tracks = [] }) {
+        const normalizedTracks = tracks.map((track) => normalizeTrackRecord(track)).filter(Boolean)
+
+        const uniqueTrackPaths = new Set()
+        const uniqueTracks = normalizedTracks.filter((track) => {
+            if (uniqueTrackPaths.has(track.filePath)) {
+                return false
+            }
+
+            uniqueTrackPaths.add(track.filePath)
+            return true
+        })
+
+        if (!uniqueTracks.length) {
             return null
         }
 
@@ -264,13 +376,84 @@ export const sessionService = (() => {
                     ? name.trim()
                     : `New Playlist ${playlists.length + 1}`,
             banner: typeof banner === 'string' ? banner.trim() : '',
-            tracks: [track],
+            tracks: uniqueTracks,
             createdAt: now,
             updatedAt: now,
         }
 
         const saved = await saveUserPlaylists([newPlaylist, ...playlists])
         return saved ? newPlaylist : null
+    }
+
+    async function loadRecentFolderPlaylists() {
+        try {
+            const raw = window.localStorage.getItem(RECENT_FOLDER_PLAYLISTS_KEY)
+            if (!raw) {
+                return []
+            }
+
+            const parsed = JSON.parse(raw)
+            return normalizeRecentFolderPlaylists(parsed)
+        } catch (error) {
+            console.error('Failed to load recent folder playlists:', error)
+            return []
+        }
+    }
+
+    async function saveRecentFolderPlaylists(playlists) {
+        try {
+            const normalized = normalizeRecentFolderPlaylists(playlists)
+            window.localStorage.setItem(RECENT_FOLDER_PLAYLISTS_KEY, JSON.stringify(normalized))
+            window.dispatchEvent(new CustomEvent('recent-folder-playlists:updated'))
+            return true
+        } catch (error) {
+            console.error('Failed to save recent folder playlists:', error)
+            return false
+        }
+    }
+
+    async function prependRecentFolderPlaylist({ folderPath, name, tracks }) {
+        const safeFolderPath = typeof folderPath === 'string' ? folderPath.trim() : ''
+        if (!safeFolderPath) {
+            return null
+        }
+
+        const normalizedTracks = normalizeRecentFolderPlaylistTracks(tracks)
+        if (!normalizedTracks.length) {
+            return null
+        }
+
+        const recentFolderPlaylists = await loadRecentFolderPlaylists()
+        const now = new Date().toISOString()
+        const fallbackName = getBaseName(safeFolderPath, 'Folder Playlist')
+        const safeName = typeof name === 'string' && name.trim() ? name.trim() : fallbackName
+        const existing = recentFolderPlaylists.find(
+            (playlist) => playlist.folderPath === safeFolderPath,
+        )
+
+        const nextEntry = existing
+            ? {
+                  ...existing,
+                  name: safeName,
+                  tracks: normalizedTracks,
+                  updatedAt: now,
+              }
+            : {
+                  id: `recent-folder-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
+                  folderPath: safeFolderPath,
+                  name: safeName,
+                  tracks: normalizedTracks,
+                  createdAt: now,
+                  updatedAt: now,
+              }
+
+        const nextRecentFolderPlaylists = [
+            nextEntry,
+            ...recentFolderPlaylists.filter((playlist) => playlist.folderPath !== safeFolderPath),
+        ].slice(0, MAX_RECENT_FOLDER_PLAYLISTS)
+
+        const saved = await saveRecentFolderPlaylists(nextRecentFolderPlaylists)
+        return saved ? nextEntry : null
     }
 
     return {
@@ -285,8 +468,13 @@ export const sessionService = (() => {
         loadUserPlaylists,
         saveUserPlaylists,
         addTrackToUserPlaylist,
+        addTracksToUserPlaylist,
         createUserPlaylist,
+        createUserPlaylistWithTracks,
         createPlaylistAndAddTrack,
+        loadRecentFolderPlaylists,
+        saveRecentFolderPlaylists,
+        prependRecentFolderPlaylist,
     }
 })()
 

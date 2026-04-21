@@ -17,6 +17,7 @@
     grid-template-columns: repeat(auto-fill, minmax(200px, 300px));
     justify-content: start;
     gap: 12px;
+    position: relative;
 }
 
 .libraryPlaylistCard {
@@ -96,6 +97,40 @@
     opacity: 1;
     visibility: visible;
     transform: translateY(0);
+}
+
+.libraryContextMenu {
+    display: none;
+    position: fixed;
+    min-width: 180px;
+    background: #ffffff;
+    border: 1px solid #d9dee7;
+    border-radius: 8px;
+    box-shadow: 0 8px 18px rgba(23, 31, 56, 0.12);
+    z-index: 2200;
+    padding: 6px;
+}
+
+.libraryContextMenu.is-open {
+    display: grid;
+    gap: 6px;
+}
+
+.deletePlaylistMenuBtn {
+    border: 1px solid #d6dbe3;
+    background: #ffffff;
+    border-radius: 8px;
+    min-height: 34px;
+    padding: 0 10px;
+    font-size: 12px;
+    font-weight: 600;
+    /* color: #8b1e2a; */
+    cursor: pointer;
+    text-align: left;
+}
+
+.deletePlaylistMenuBtn:hover {
+    background: #fff3f4;
 }
 
 .libraryEmpty {

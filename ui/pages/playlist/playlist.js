@@ -1,17 +1,24 @@
 import {
     escapeHtml,
     attachIndexedMenuToggle,
+    getDataAttributeIndex,
     bindImageFallback,
     bindImageFallbacks,
 } from '../../utils/dom-helpers.js'
 import { formatDate } from '../../utils/date.js'
 import { formatDurationClock, formatDurationVerbose } from '../../utils/duration.js'
-import { toFileUrl, getBaseName } from '../../utils/file-path.js'
+import { toFileUrl } from '../../utils/file-path.js'
 import {
     resolvePlaylistImage,
     extractPlaylistFilePaths,
     resolveTrackImage,
 } from '../../utils/playlist-media.js'
+import {
+    normalizeTrackRecord,
+    DEFAULT_TRACK_TITLE,
+    DEFAULT_TRACK_ARTIST,
+    DEFAULT_TRACK_ALBUM,
+} from '../../utils/track-record.js'
 import { sessionService } from '../../services/session-service.js'
 import { audioService } from '../../services/audio-service.js'
 import { isRouteActive } from '../../utils/route.js'
@@ -188,15 +195,17 @@ export function initializePlaylistPage() {
 
         body.innerHTML = activePlaylist.tracks
             .map((track, index) => {
-                const trackTitle = track?.title || getBaseName(track?.filePath)
-                const artist = track?.artist || 'Unknown Artist'
-                const album = track?.album || 'Unknown Album'
-                const trackImage = resolveTrackImage(track) || './assets/music-placeholder.png'
-                const dateAdded = formatDate(track?.playedAt || track?.addedAt)
+                const normalizedTrack = normalizeTrackRecord(track)
+                const trackTitle = normalizedTrack?.title || DEFAULT_TRACK_TITLE
+                const artist = normalizedTrack?.artist || DEFAULT_TRACK_ARTIST
+                const album = normalizedTrack?.album || DEFAULT_TRACK_ALBUM
+                const trackImage =
+                    resolveTrackImage(normalizedTrack) || './assets/music-placeholder.png'
+                const dateAdded = formatDate(normalizedTrack?.playedAt || normalizedTrack?.addedAt)
                 const duration =
-                    typeof track?.duration === 'number' && track.duration > 0
-                        ? track.duration
-                        : durationCache.get(track?.filePath)
+                    typeof normalizedTrack?.duration === 'number' && normalizedTrack.duration > 0
+                        ? normalizedTrack.duration
+                        : durationCache.get(normalizedTrack?.filePath)
                 return `
 					<tr class="playlistTrackRow" data-track-index="${index}">
                     <td class="playlistTrackIndexCell">
@@ -255,9 +264,9 @@ export function initializePlaylistPage() {
                 event.stopPropagation()
                 event.preventDefault()
 
-                const trackIndex = Number(button.getAttribute('data-track-index'))
+                const trackIndex = getDataAttributeIndex(button, 'data-track-index')
                 const activePlaylist = getActivePlaylist()
-                if (!activePlaylist || !Number.isInteger(trackIndex)) {
+                if (!activePlaylist || trackIndex === null) {
                     return
                 }
 
@@ -296,9 +305,9 @@ export function initializePlaylistPage() {
                 event.stopPropagation()
                 event.preventDefault()
 
-                const trackIndex = Number(button.getAttribute('data-track-index'))
+                const trackIndex = getDataAttributeIndex(button, 'data-track-index')
                 const activePlaylist = getActivePlaylist()
-                if (!activePlaylist || !Number.isInteger(trackIndex)) {
+                if (!activePlaylist || trackIndex === null) {
                     return
                 }
 

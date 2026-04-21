@@ -161,6 +161,99 @@ export function attachIndexedMenuToggle({
     }
 }
 
+export function placeFloatingElement({
+    element,
+    left = 0,
+    top = 0,
+    widthFallback = 0,
+    heightFallback = 0,
+    padding = 8,
+    position = 'fixed',
+}) {
+    if (!element) {
+        return null
+    }
+
+    const elementWidth = Number(element.offsetWidth) || Number(widthFallback) || 0
+    const elementHeight = Number(element.offsetHeight) || Number(heightFallback) || 0
+    const viewportWidth = Number(window.innerWidth) || 0
+    const viewportHeight = Number(window.innerHeight) || 0
+    const safePadding = Number.isFinite(Number(padding)) ? Number(padding) : 8
+
+    const maxLeft = viewportWidth - elementWidth - safePadding
+    const maxTop = viewportHeight - elementHeight - safePadding
+    const safeLeft = Math.max(safePadding, Math.min(Number(left) || 0, maxLeft))
+    const safeTop = Math.max(safePadding, Math.min(Number(top) || 0, maxTop))
+
+    element.style.position = position
+    element.style.left = `${safeLeft}px`
+    element.style.top = `${safeTop}px`
+
+    return {
+        left: safeLeft,
+        top: safeTop,
+        width: elementWidth,
+        height: elementHeight,
+    }
+}
+
+export function bindGlobalDismissEvents({
+    onDismiss,
+    closeOnClick = true,
+    closeOnScroll = true,
+    closeOnResize = true,
+    scrollCapture = true,
+}) {
+    if (typeof onDismiss !== 'function') {
+        return () => {}
+    }
+
+    const onGlobalDismiss = () => {
+        onDismiss()
+    }
+
+    const useScrollCapture = Boolean(scrollCapture)
+
+    if (closeOnClick) {
+        document.addEventListener('click', onGlobalDismiss)
+    }
+
+    if (closeOnScroll) {
+        document.addEventListener('scroll', onGlobalDismiss, useScrollCapture)
+    }
+
+    if (closeOnResize) {
+        window.addEventListener('resize', onGlobalDismiss)
+    }
+
+    return () => {
+        if (closeOnClick) {
+            document.removeEventListener('click', onGlobalDismiss)
+        }
+
+        if (closeOnScroll) {
+            document.removeEventListener('scroll', onGlobalDismiss, useScrollCapture)
+        }
+
+        if (closeOnResize) {
+            window.removeEventListener('resize', onGlobalDismiss)
+        }
+    }
+}
+
+export function getDataAttributeIndex(element, attributeName) {
+    if (!element || typeof attributeName !== 'string' || !attributeName.trim()) {
+        return null
+    }
+
+    const value = Number(element.getAttribute(attributeName))
+    if (!Number.isInteger(value) || value < 0) {
+        return null
+    }
+
+    return value
+}
+
 function resolveFallbackSrc(fallbackSrc) {
     if (typeof fallbackSrc === 'string' && fallbackSrc.trim()) {
         return fallbackSrc.trim()
@@ -213,6 +306,9 @@ export const domHelpers = {
     showModalPrompt,
     bindModalResolve,
     attachIndexedMenuToggle,
+    placeFloatingElement,
+    bindGlobalDismissEvents,
+    getDataAttributeIndex,
     bindImageFallback,
     bindImageFallbacks,
 }
