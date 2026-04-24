@@ -23,7 +23,7 @@ import { audioService } from '../../services/audio-service.js'
 import { isRouteActive } from '../../utils/route.js'
 
 const RECENT_TABS = new Set(['all', 'playlist', 'music'])
-const VIEW_SONGS_METADATA_DEBUG_ENABLED = true
+const VIEW_SONGS_METADATA_DEBUG_ENABLED = false
 const VIEW_SONGS_METADATA_WORKERS = 4
 
 export function initializeRecentMusic() {
@@ -159,11 +159,15 @@ export function initializeRecentMusic() {
             value: undefined,
         })
 
+        bindModalDismiss({ modalHost, resolve: close })
+    }
+
+    function bindModalDismiss({ modalHost, resolve, value = null }) {
         bindModalResolve({
             modalHost,
             selector: '.recentModalBackdrop',
-            resolve: close,
-            value: undefined,
+            resolve,
+            value,
         })
     }
 
@@ -199,12 +203,7 @@ export function initializeRecentMusic() {
                     value: null,
                 })
 
-                bindModalResolve({
-                    modalHost,
-                    selector: '.recentModalBackdrop',
-                    resolve,
-                    value: null,
-                })
+                bindModalDismiss({ modalHost, resolve, value: null })
 
                 bindModalResolve({
                     modalHost,
@@ -268,12 +267,7 @@ export function initializeRecentMusic() {
                     value: null,
                 })
 
-                bindModalResolve({
-                    modalHost,
-                    selector: '.recentModalBackdrop',
-                    resolve,
-                    value: null,
-                })
+                bindModalDismiss({ modalHost, resolve, value: null })
 
                 bindModalResolve({
                     modalHost,
@@ -489,12 +483,7 @@ export function initializeRecentMusic() {
                     value: null,
                 })
 
-                bindModalResolve({
-                    modalHost,
-                    selector: '.recentModalBackdrop',
-                    resolve,
-                    value: null,
-                })
+                bindModalDismiss({ modalHost, resolve, value: null })
 
                 hydrateViewSongsMetadata({
                     playlist,
@@ -931,6 +920,21 @@ export function initializeRecentMusic() {
         })
     }
 
+    function bindMenuPositioning({ triggerSelector, menuSelector, indexAttribute }) {
+        const buttons = recentMusic.querySelectorAll(triggerSelector)
+        buttons.forEach((button) => {
+            button.addEventListener('click', () => {
+                requestAnimationFrame(() => {
+                    positionActionsMenu({
+                        button,
+                        menuSelector,
+                        indexAttribute,
+                    })
+                })
+            })
+        })
+    }
+
     function renderRecentContent() {
         const contentContainer = recentMusic.querySelector('.recentTabContent')
         if (!contentContainer) {
@@ -966,30 +970,16 @@ export function initializeRecentMusic() {
             indexAttribute: 'data-playlist-index',
         })
 
-        const trackMoreButtons = recentMusic.querySelectorAll('.trackMoreBtn')
-        trackMoreButtons.forEach((button) => {
-            button.addEventListener('click', () => {
-                requestAnimationFrame(() => {
-                    positionActionsMenu({
-                        button,
-                        menuSelector: '.trackActionsMenu',
-                        indexAttribute: 'data-track-index',
-                    })
-                })
-            })
+        bindMenuPositioning({
+            triggerSelector: '.trackMoreBtn',
+            menuSelector: '.trackActionsMenu',
+            indexAttribute: 'data-track-index',
         })
 
-        const recentPlaylistMoreButtons = recentMusic.querySelectorAll('.recentFolderMoreBtn')
-        recentPlaylistMoreButtons.forEach((button) => {
-            button.addEventListener('click', () => {
-                requestAnimationFrame(() => {
-                    positionActionsMenu({
-                        button,
-                        menuSelector: '.recentFolderActionsMenu',
-                        indexAttribute: 'data-playlist-index',
-                    })
-                })
-            })
+        bindMenuPositioning({
+            triggerSelector: '.recentFolderMoreBtn',
+            menuSelector: '.recentFolderActionsMenu',
+            indexAttribute: 'data-playlist-index',
         })
 
         bindTrackPlayActions()
@@ -1092,30 +1082,26 @@ export function initializeRecentMusic() {
     // Load and render on initialization
     loadAndRenderRecentContent()
 
-    const onRecentTracksUpdated = () => {
-        if (!isRouteActive('home')) {
+    const HOME_ROUTE = 'home'
+    const shouldRefreshCurrentRoute = () => isRouteActive(HOME_ROUTE)
+
+    const recentMusicRefreshEvents = [
+        'recent-tracks:updated',
+        'user-playlists:updated',
+        'recent-folder-playlists:updated',
+    ]
+
+    const onRecentDataUpdated = () => {
+        if (!shouldRefreshCurrentRoute()) {
             return
         }
+
         loadAndRenderRecentContent()
     }
 
-    const onUserPlaylistsUpdated = () => {
-        if (!isRouteActive('home')) {
-            return
-        }
-        loadAndRenderRecentContent()
-    }
-
-    const onRecentFolderPlaylistsUpdated = () => {
-        if (!isRouteActive('home')) {
-            return
-        }
-        loadAndRenderRecentContent()
-    }
-
-    window.addEventListener('recent-tracks:updated', onRecentTracksUpdated)
-    window.addEventListener('user-playlists:updated', onUserPlaylistsUpdated)
-    window.addEventListener('recent-folder-playlists:updated', onRecentFolderPlaylistsUpdated)
+    recentMusicRefreshEvents.forEach((eventName) => {
+        window.addEventListener(eventName, onRecentDataUpdated)
+    })
     cleanupGlobalMenuDismiss = bindGlobalDismissEvents({
         onDismiss: closeAllActionMenus,
         closeOnClick: false,
@@ -1125,12 +1111,9 @@ export function initializeRecentMusic() {
     })
 
     const cleanup = () => {
-        window.removeEventListener('recent-tracks:updated', onRecentTracksUpdated)
-        window.removeEventListener('user-playlists:updated', onUserPlaylistsUpdated)
-        window.removeEventListener(
-            'recent-folder-playlists:updated',
-            onRecentFolderPlaylistsUpdated,
-        )
+        recentMusicRefreshEvents.forEach((eventName) => {
+            window.removeEventListener(eventName, onRecentDataUpdated)
+        })
         if (typeof cleanupGlobalMenuDismiss === 'function') {
             cleanupGlobalMenuDismiss()
             cleanupGlobalMenuDismiss = null

@@ -1,6 +1,6 @@
 const path = require('path')
 const fs = require('fs')
-const { app, BrowserWindow, ipcMain, dialog } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron')
 const AUDIO_EXTENSIONS = new Set(['.mp3', '.wav'])
 const MAX_AUDIO_FILE_BYTES = Number(process.env.MAX_AUDIO_FILE_BYTES || 100 * 1024 * 1024)
 const MAX_METADATA_READ_BYTES = Number(process.env.MAX_METADATA_READ_BYTES || 512 * 1024)
@@ -74,6 +74,20 @@ function isPathUnderApprovedDirectory(filePath) {
 
     return false
 }
+//open link in browser insteda
+function postConfigure(window) {
+    window.webContents.setWindowOpenHandler(({ url }) => {
+        shell.openExternal(url)
+        return { action: 'deny' }
+    })
+    window.webContents.on('will-navigate', (event, url) => {
+        const isExternal = !url.startsWith(window.webContents.getURL())
+        if (isExternal) {
+            event.preventDefault()
+            shell.openExternal(url)
+        }
+    })
+}
 
 function isAllowedAudioPath(filePath) {
     const normalized = normalizeFilePath(filePath)
@@ -91,6 +105,26 @@ function normalizePlaybackPosition(value) {
     const parsed = Number(value)
     if (!Number.isFinite(parsed)) return 0
     return Math.max(0, parsed)
+}
+
+function findNthOccurrenceIndex(items, targetValue, targetOccurrence) {
+    if (!Array.isArray(items) || targetOccurrence < 1) {
+        return -1
+    }
+
+    let occurrenceCount = 0
+    for (let index = 0; index < items.length; index += 1) {
+        if (items[index] !== targetValue) {
+            continue
+        }
+
+        occurrenceCount += 1
+        if (occurrenceCount === targetOccurrence) {
+            return index
+        }
+    }
+
+    return -1
 }
 
 const createWindow = () => {
@@ -119,6 +153,7 @@ const createWindow = () => {
     win.on('ready-to-show', () => {
         win.show()
     })
+    postConfigure(win)
 }
 
 app.whenReady()
@@ -292,9 +327,23 @@ ipcMain.handle(
                 Array.isArray(playlist) && Number.isInteger(currentTrackIndex)
                     ? playlist[currentTrackIndex]
                     : null
+            const currentTrackOccurrence =
+                currentTrackPath && Array.isArray(playlist)
+                    ? playlist
+                          .slice(0, currentTrackIndex + 1)
+                          .reduce(
+                              (count, filePath) =>
+                                  filePath === currentTrackPath ? count + 1 : count,
+                              0,
+                          )
+                    : 0
             const approvedCurrentTrackIndex =
                 currentTrackPath && isAllowedAudioPath(currentTrackPath)
-                    ? approvedPlaylist.indexOf(currentTrackPath)
+                    ? findNthOccurrenceIndex(
+                          approvedPlaylist,
+                          currentTrackPath,
+                          currentTrackOccurrence,
+                      )
                     : -1
 
             settingsStore.set('recentPlaylist', approvedPlaylist)

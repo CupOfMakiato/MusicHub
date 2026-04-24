@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron')
+const { contextBridge, ipcRenderer, shell } = require('electron')
 
 contextBridge.exposeInMainWorld('electronAPI', {
     selectAudioFile: () => ipcRenderer.invoke('dialog:openAudioFile'),
@@ -15,4 +15,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
     loadRecentTracks: () => ipcRenderer.invoke('recent-tracks:load'),
     approveRecentAudioPath: (filePath) =>
         ipcRenderer.invoke('file:approveRecentAudioPath', filePath),
+    openExternal: (url) => shell.openExternal(url),
 })
