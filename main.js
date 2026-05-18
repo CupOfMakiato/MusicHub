@@ -132,8 +132,8 @@ const createWindow = () => {
     const win = new BrowserWindow({
         width: 1000,
         height: 800,
-        minWidth: 800,
-        minHeight: 566, // true size is 567 for some reason lel
+        minWidth: 870,
+        minHeight: 670, // true size is 567 for some reason lel
         useContentSize: true,
         icon: appIcon,
         webPreferences: {

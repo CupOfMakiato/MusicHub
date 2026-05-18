@@ -7,6 +7,7 @@ import { initializeLibraryPage } from './pages/library/library.js'
 import { initializePlaylistPage } from './pages/playlist/playlist.js'
 import { initializeQueuePage } from './pages/queue/queue.js'
 import { initializePlayer } from './components/bottom-player/player.js'
+import { initializeLoadingScreen } from './components/loading/loading.js'
 
 const selectFileButton = document.getElementById('selectFile')
 const openFolderButton = document.getElementById('selectFolder')
@@ -283,6 +284,7 @@ async function restoreSavedPlaylist() {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+    initializeLoadingScreen()
     await initUI()
     startStateSync()
     updateHomeVisibility('home')
