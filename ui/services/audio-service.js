@@ -319,7 +319,15 @@ export const audioService = (() => {
         if (currentSound) {
             savePlaybackSnapshot()
             stopPlaybackPersistTracking()
-            currentSound.stop()
+            try {
+                currentSound.stop()
+                if (typeof currentSound.unload === 'function') {
+                    currentSound.unload()
+                }
+            } catch (err) {
+                console.error('Error unloading previous Howl', err)
+            }
+            currentSound = null
         }
 
         const { volume } = state.getState()
@@ -361,21 +369,22 @@ export const audioService = (() => {
         }
 
         // Resolve rich metadata in background so playback is not blocked by file reads/decoding.
+        const expectedFilePath = filePath
         resolveTrackMetadata(filePath)
             .then((trackData) => {
                 const { playlist: latestPlaylist, currentTrackIndex } = state.getState()
                 const isSameTrack =
                     Array.isArray(latestPlaylist) &&
                     currentTrackIndex >= 0 &&
-                    latestPlaylist[currentTrackIndex] === filePath
+                    latestPlaylist[currentTrackIndex] === expectedFilePath
 
                 if (isSameTrack) {
                     state.setCurrentTrack(trackData)
                 }
 
-                if (addToRecentTracks && sessionService?.prependRecentTrack) {
+                if (addToRecentTracks && sessionService?.prependRecentTrack && isSameTrack) {
                     sessionService.prependRecentTrack({
-                        filePath,
+                        filePath: expectedFilePath,
                         title: trackData.title,
                         artist: trackData.artist,
                         album: trackData.album,

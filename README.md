@@ -4,6 +4,8 @@
 
 This repository is my attempt at exploring Electron (for cross-platform desktop application). This is a music player that will be developed over the course of my free-time.
 
+The ppplication use VanillaJs cuz i like torturing myself lel (jk idk)
+
 ## Future TODO
 
 - **Audio normalization:** Normalize volume levels across tracks during playback so perceived loudness is consistent.

@@ -590,11 +590,14 @@ export function initializeRecentMusic() {
         }
 
         const success = await sessionService.addTrackToUserPlaylist(selectedPlaylist.id, track)
+        const playlistName = selectedPlaylist?.name || 'playlist'
         if (success) {
-            showMessage(`Added to playlist: ${selectedPlaylist.name}`)
+            showMessage(`Added to playlist: ${playlistName}`)
+        } else {
+            showMessage(`Failed to add to playlist: ${playlistName}`)
         }
 
-        return true
+        return Boolean(success)
     }
 
     async function handleCreatePlaylistAction(track) {
@@ -712,10 +715,11 @@ export function initializeRecentMusic() {
             resolvedTracks,
         )
 
+        const playlistName = selectedPlaylist?.name || 'playlist'
         if (success) {
-            showMessage(
-                `Added ${resolvedTracks.length} songs to playlist: ${selectedPlaylist.name}`,
-            )
+            showMessage(`Added ${resolvedTracks.length} songs to playlist: ${playlistName}`)
+        } else {
+            showMessage(`Failed to add ${resolvedTracks.length} songs to playlist: ${playlistName}`)
         }
 
         return Boolean(success)
