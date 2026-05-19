@@ -1,3 +1,216 @@
+:root {
+    --bottom-player-height: 92px;
+}
+
+body {
+    padding-bottom: calc(var(--bottom-player-height) + 12px);
+}
+
+#bottom-player {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 999;
+    border-top: 1px solid #d8dee8;
+    background: #ffffff;
+    box-shadow: 0 -10px 24px rgba(14, 24, 42, 0.12);
+}
+
+#bottom-player .bottomPlayer {
+    min-height: var(--bottom-player-height);
+    padding: 10px 14px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.45fr) minmax(148px, 0.8fr);
+    align-items: center;
+    gap: 10px;
+    box-sizing: border-box;
+}
+
+#bottom-player .playerLeft {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+#bottom-player .albumArt {
+    width: 50px;
+    height: 50px;
+    border-radius: 8px;
+    object-fit: cover;
+    background: #edf2f7;
+    flex-shrink: 0;
+}
+
+#bottom-player .trackInfo {
+    min-width: 0;
+}
+
 #bottom-player #trackTitle {
-  font-weight: bold;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#bottom-player #trackArtist {
+    font-size: 13px;
+    color: #5f6368;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#bottom-player .playerCenter {
+    min-width: 0;
+    display: grid;
+    gap: 8px;
+}
+
+#bottom-player .playerTransport {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+
+#bottom-player .playerProgress {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: 30px minmax(100px, 1fr) 30px;
+    align-items: center;
+    gap: 6px;
+}
+
+#bottom-player .playerRight {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+}
+
+#bottom-player button {
+    width: 34px;
+    height: 34px;
+    border: 1px solid #d5dce6;
+    border-radius: 9px;
+    background: #ffffff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+#bottom-player button:hover {
+    background: #f5f8fc;
+}
+
+#bottom-player #playPauseBtn {
+}
+
+#bottom-player #playPauseBtn:hover {
+}
+
+#bottom-player #currentTime,
+#bottom-player #duration {
+    font-size: 11px;
+    color: #4f5b68;
+    min-width: 30px;
+    text-align: center;
+}
+
+#bottom-player input[type='range'] {
+    width: 100%;
+}
+
+#bottom-player #volumeSlider {
+    width: min(120px, 100%);
+    max-width: 120px;
+}
+
+@media (max-height: 620px) and (min-width: 761px) {
+    :root {
+        --bottom-player-height: 82px;
+    }
+
+    #bottom-player .bottomPlayer {
+        padding: 8px 12px;
+    }
+
+    #bottom-player .albumArt {
+        width: 44px;
+        height: 44px;
+    }
+
+    #bottom-player button {
+        width: 32px;
+        height: 32px;
+    }
+
+    #bottom-player #volumeSlider {
+        width: min(96px, 100%);
+        max-width: 96px;
+    }
+}
+
+@media (max-width: 760px) {
+    :root {
+        --bottom-player-height: 126px;
+    }
+
+    #bottom-player .bottomPlayer {
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-areas:
+            'left right'
+            'center center';
+        gap: 8px;
+        padding: 9px 12px;
+    }
+
+    #bottom-player .playerLeft {
+        grid-area: left;
+    }
+
+    #bottom-player .playerCenter {
+        grid-area: center;
+    }
+
+    #bottom-player .playerRight {
+        grid-area: right;
+    }
+
+    #bottom-player #volumeSlider {
+        width: min(92px, 100%);
+        max-width: 92px;
+    }
+}
+
+@media (max-width: 560px) {
+    :root {
+        --bottom-player-height: 168px;
+    }
+
+    #bottom-player .bottomPlayer {
+        grid-template-columns: 1fr;
+        grid-template-areas:
+            'left'
+            'center'
+            'right';
+        gap: 8px;
+        padding: 10px 12px;
+    }
+
+    #bottom-player .playerProgress {
+        grid-template-columns: 28px minmax(64px, 1fr) 28px;
+    }
+
+    #bottom-player .playerRight {
+        justify-content: flex-start;
+    }
+
+    #bottom-player #volumeSlider {
+        max-width: 100%;
+    }
 }

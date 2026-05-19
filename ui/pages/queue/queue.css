@@ -1,0 +1,138 @@
+.queuePage {
+    display: grid;
+    gap: 16px;
+    padding: 16px;
+}
+
+.queueHeader h2 {
+    margin: 0;
+}
+
+.queueHeader p {
+    margin: 6px 0 0;
+    color: #5f6368;
+    font-size: 13px;
+}
+
+.queueSection {
+    display: grid;
+    gap: 8px;
+    border: 1px solid #d8dee8;
+    border-radius: 10px;
+    background: #ffffff;
+    padding: 12px;
+}
+
+.queueSection h3 {
+    margin: 0;
+    font-size: 18px;
+}
+
+.queueList {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 10px;
+}
+
+.queueItem {
+    border-radius: 10px;
+}
+
+.queueItemButton {
+    width: 100%;
+    border: 1px solid #edf1f5;
+    background: #ffffff;
+    border-radius: 10px;
+    display: grid;
+    grid-template-columns: 60px 1fr;
+    align-items: center;
+    gap: 12px;
+    padding: 8px;
+    text-align: left;
+    cursor: pointer;
+    color: inherit;
+}
+
+.queueItemButton:hover {
+    background: #f8fafc;
+    border-color: #dce3ed;
+}
+
+.queueItem.isActive .queueItemButton {
+    background: #eef6ff;
+    border-color: #bfd8ff;
+}
+
+.queueCover {
+    width: 60px;
+    height: 60px;
+    border-radius: 8px;
+    object-fit: cover;
+    background: #f1f4f8;
+}
+
+.queueInfo {
+    min-width: 0;
+    display: grid;
+    gap: 4px;
+}
+
+.queueTitle {
+    font-size: 16px;
+    font-weight: 600;
+    color: #1f2937;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.queueItem.isActive .queueTitle {
+    color: #1367d4;
+}
+
+.queueArtist {
+    font-size: 14px;
+    color: #5f6368;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.queueEmptyState,
+.queueHint {
+    color: #667085;
+    font-size: 14px;
+    margin: 0;
+}
+
+.queueHint {
+    list-style: none;
+    padding: 2px 2px;
+}
+
+@media (max-width: 720px) {
+    .queueSection h3 {
+        font-size: 16px;
+    }
+
+    .queueTitle {
+        font-size: 15px;
+    }
+
+    .queueArtist {
+        font-size: 14px;
+    }
+
+    .queueItemButton {
+        grid-template-columns: 52px 1fr;
+        padding: 6px;
+        gap: 10px;
+    }
+
+    .queueCover {
+        width: 52px;
+        height: 52px;
+    }
+}

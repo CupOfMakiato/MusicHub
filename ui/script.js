@@ -1,15 +1,71 @@
+// browser environment entry point - responsible for initializing the UI, managing routing, and syncing state with the player
+
+import { playerState } from './state/player-state.js'
+import { sessionService } from './services/session-service.js'
+import { audioService } from './services/audio-service.js'
+import { bindImageFallback } from './utils/dom-helpers.js'
+import { initializeRecentMusic } from './components/recent-music/recent-music.js'
+import { initializeLibraryPage } from './pages/library/library.js'
+import { initializePlaylistPage } from './pages/playlist/playlist.js'
+import { initializeQueuePage } from './pages/queue/queue.js'
+import { initializePlayer } from './components/bottom-player/player.js'
+import { initializeLoadingScreen } from './components/loading/loading.js'
+
 const selectFileButton = document.getElementById('selectFile')
 const openFolderButton = document.getElementById('selectFolder')
 const coverImage = document.getElementById('coverImage')
 const trackTitle = document.getElementById('trackTitle')
 const trackArtist = document.getElementById('trackArtist')
-const placeholderCover = window.audioService?.placeholderCover || './assets/music-placeholder.png'
+const placeholderCover = audioService?.placeholderCover || './assets/music-placeholder.png'
+let currentRoute = 'home'
+const homeOnlyElements = [
+    coverImage,
+    trackTitle,
+    trackArtist,
+    selectFileButton,
+    openFolderButton,
+].filter(Boolean)
+const routeCleanups = new Map()
 
-async function loadComponent(
-  elementId,
-  filePath,
-  onLoadCallback = null
-) {
+const routeDefinitions = {
+    home: {
+        hostId: 'recent-music',
+        filePath: './components/recent-music/recent-music.html',
+        onLoad: () => {
+            initializeRecentMusic()
+        },
+    },
+    library: {
+        hostId: 'recent-music',
+        filePath: './pages/library/library-layout.html',
+        onLoad: () => {
+            initializeLibraryPage()
+        },
+    },
+    playlist: {
+        hostId: 'recent-music',
+        filePath: './pages/playlist/playlist-layout.html',
+        onLoad: () => {
+            initializePlaylistPage()
+        },
+    },
+    queue: {
+        hostId: 'recent-music',
+        filePath: './pages/queue/queue-layout.html',
+        onLoad: () => {
+            initializeQueuePage()
+        },
+    },
+    about: {
+        hostId: 'recent-music',
+        filePath: './pages/about/about-layout.html',
+        // onLoad: () => {
+        //     initializeAboutPage()
+        // },
+    },
+}
+
+async function loadComponent(elementId, filePath, onLoadCallback = null) {
     const response = await fetch(filePath)
     const html = await response.text()
     const hostElement = document.getElementById(elementId)
@@ -20,43 +76,156 @@ async function loadComponent(
     }
 
     hostElement.innerHTML = html
-  
     window.lucide?.createIcons()
-  
-  if (onLoadCallback && typeof onLoadCallback === 'function') {
+
+    if (typeof onLoadCallback === 'function') {
         onLoadCallback()
-  }
+    }
 }
 
 async function initUI() {
-        await loadComponent(
-    "sidebar",
-        "./components/sidebar/sidebar.html"
-    )
+    await loadComponent('sidebar', './components/sidebar/sidebar.html', () => {
+        initializeSidebarRouting()
+    })
 
-        await loadComponent(
-    "recent-music",
-        "./components/recent-music/recent-music.html",
-        () => {
-            if (window.InitializeRecentMusic) {
-                        window.InitializeRecentMusic()
+    await renderRoute('home')
+
+    await loadComponent('bottom-player', './components/bottom-player/player.html', () => {
+        initializePlayer()
+    })
+}
+
+function getRouteDefinition(routeName) {
+    return routeDefinitions[routeName] || routeDefinitions.home
+}
+
+function registerRouteCleanup(routeName, cleanupFn) {
+    if (!routeName || typeof cleanupFn !== 'function') {
+        return
+    }
+
+    const previousCleanup = routeCleanups.get(routeName)
+    if (typeof previousCleanup === 'function') {
+        try {
+            previousCleanup()
+        } catch (error) {
+            console.error('Failed to cleanup route resources:', error)
+        }
+    }
+
+    routeCleanups.set(routeName, cleanupFn)
+}
+
+function cleanupInactiveRouteResources(activeRoute = null) {
+    routeCleanups.forEach((cleanupFn, routeName) => {
+        if (activeRoute && routeName === activeRoute) {
+            return
+        }
+
+        if (typeof cleanupFn === 'function') {
+            try {
+                cleanupFn()
+            } catch (error) {
+                console.error('Failed to cleanup route resources:', error)
             }
         }
-    )
 
-        await loadComponent(
-    "bottom-player",
-        "./components/bottom-player/player.html",
-        () => {
-            if (window.initializePlayer) {
-                window.initializePlayer()
-            }
+        routeCleanups.delete(routeName)
+    })
+}
+
+function normalizeRouteName(routeName) {
+    return routeDefinitions[routeName] ? routeName : 'home'
+}
+
+function cleanupAllRouteResources() {
+    cleanupInactiveRouteResources(null)
+}
+
+window.addEventListener(
+    'beforeunload',
+    () => {
+        cleanupAllRouteResources()
+    },
+    { once: true },
+)
+
+async function renderRoute(routeName) {
+    const route = normalizeRouteName(routeName || 'home')
+    const routeDefinition = getRouteDefinition(route)
+
+    currentRoute = route
+    cleanupInactiveRouteResources(route)
+    updateHomeVisibility(route)
+
+    await loadComponent(routeDefinition.hostId, routeDefinition.filePath, routeDefinition.onLoad)
+}
+
+function updateHomeVisibility(route) {
+    const isHome = route === 'home'
+
+    homeOnlyElements.forEach((element) => {
+        if (!element) {
+            return
         }
-    )
+
+        const hasPreviousDisplay = element.dataset.previousDisplay !== undefined
+
+        if (isHome) {
+            if (!hasPreviousDisplay) {
+                element.style.removeProperty('display')
+                return
+            }
+
+            const previousDisplay = element.dataset.previousDisplay
+            if (previousDisplay) {
+                element.style.display = previousDisplay
+            } else {
+                element.style.removeProperty('display')
+            }
+
+            delete element.dataset.previousDisplay
+            return
+        }
+
+        if (!hasPreviousDisplay) {
+            element.dataset.previousDisplay = element.style.display || ''
+        }
+        element.style.display = 'none'
+    })
+}
+
+window.appRouter = {
+    goTo: async (routeName) => {
+        await renderRoute(routeName)
+    },
+    getCurrentRoute: () => currentRoute,
+    registerCleanup: (routeName, cleanupFn) => {
+        registerRouteCleanup(routeName, cleanupFn)
+    },
+    registerCurrentRouteCleanup: (cleanupFn) => {
+        registerRouteCleanup(currentRoute, cleanupFn)
+    },
+}
+
+function initializeSidebarRouting() {
+    const sidebar = document.getElementById('sidebar')
+    if (!sidebar) {
+        return
+    }
+
+    const routeLinks = sidebar.querySelectorAll('[data-route]')
+    routeLinks.forEach((link) => {
+        link.addEventListener('click', async (event) => {
+            event.preventDefault()
+            const route = link.getAttribute('data-route') || 'home'
+            await renderRoute(route)
+        })
+    })
 }
 
 function updateTrackInfoFromState() {
-    const currentTrack = playerState?.getState()?.currentTrack || {}
+    const currentTrack = playerState.getState()?.currentTrack || {}
     const title = currentTrack.title
     const artist = currentTrack.artist
     const image = currentTrack.image
@@ -69,48 +238,43 @@ function updateTrackInfoFromState() {
 }
 
 if (coverImage) {
-    coverImage.addEventListener('error', () => {
-        coverImage.src = placeholderCover
-    })
+    bindImageFallback(coverImage)
 }
 
 function startStateSync() {
     updateTrackInfoFromState()
     let unsubscribe = null
 
-    if (window.playerState?.subscribe) {
-        unsubscribe = window.playerState.subscribe(() => {
+    if (playerState?.subscribe) {
+        unsubscribe = playerState.subscribe(() => {
             updateTrackInfoFromState()
         })
     }
 
-    window.addEventListener('beforeunload', () => {
-        if (typeof unsubscribe === 'function') {
-            unsubscribe()
-        }
-    }, { once: true })
+    window.addEventListener(
+        'beforeunload',
+        () => {
+            if (typeof unsubscribe === 'function') {
+                unsubscribe()
+            }
+        },
+        { once: true },
+    )
 }
 
 async function restoreSavedPlaylist() {
     try {
-        if (!window.sessionService?.loadPlaylist) {
-            console.log('loadPlaylist not available from sessionService')
-            return
-        }
-
-        const { playlist, currentTrackIndex, playbackPosition } = await window.sessionService.loadPlaylist()
+        const { playlist, currentTrackIndex, playbackPosition } =
+            await sessionService.loadPlaylist()
 
         if (!playlist || playlist.length === 0) {
-            console.log('No saved playlist to restore')
             return
         }
 
-        console.log('Restoring saved playlist with', playlist.length, 'tracks')
-        playerState?.setPlaylist(playlist)
+        playerState.setPlaylist(playlist)
 
         if (currentTrackIndex >= 0 && currentTrackIndex < playlist.length) {
-            console.log('Restoring track at index', currentTrackIndex, 'paused at', playbackPosition, 'seconds')
-            audioService?.playTrackAtIndex(currentTrackIndex, {
+            audioService.playTrackAtIndex(currentTrackIndex, {
                 autoplay: false,
                 startAtSeconds: playbackPosition,
                 addToRecentTracks: false,
@@ -122,10 +286,10 @@ async function restoreSavedPlaylist() {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+    initializeLoadingScreen()
     await initUI()
     startStateSync()
-
-    // Restore playlist from previous session
+    updateHomeVisibility('home')
     restoreSavedPlaylist()
 })
 
@@ -134,11 +298,10 @@ selectFileButton?.addEventListener('click', async () => {
         const selectedFile = await window.electronAPI.selectAudioFile()
 
         if (!selectedFile) {
-            console.log('No file selected')
             return
         }
 
-        audioService?.startPlaylist([selectedFile])
+        audioService.startSingleTrack(selectedFile)
     } catch (error) {
         console.error('Failed to select or play audio file:', error)
     }
@@ -149,31 +312,40 @@ openFolderButton?.addEventListener('click', async () => {
         const selectedFolder = await window.electronAPI.openFolder()
 
         if (!selectedFolder) {
-            console.log('No folder selected')
             return
         }
 
         const files = await window.electronAPI.getAudioFilesInFolder(selectedFolder)
 
         if (!Array.isArray(files) || files.length === 0) {
-            playerState?.setCurrentTrack({
+            playerState.setCurrentTrack({
                 filePath: null,
                 title: 'No audio files found',
                 artist: 'Select another folder',
                 image: placeholderCover,
             })
-            playerState?.setPlaylist([])
-            playerState?.setCurrentTrackIndex(-1)
-            audioService?.clearCurrentMusic()
-            if (window.sessionService?.savePlaylist) {
-                await window.sessionService.savePlaylist([], -1, 0)
-            }
+            playerState.setPlaylist([])
+            playerState.setCurrentTrackIndex(-1)
+            audioService.clearCurrentMusic()
+            await sessionService.savePlaylist([], -1, 0)
             return
         }
 
-        audioService?.startPlaylist(files)
+        sessionService
+            .prependRecentFolderPlaylist({
+                folderPath: selectedFolder,
+                tracks: files,
+            })
+            .catch((error) => {
+                console.error('Failed to persist recent folder playlist:', error)
+            })
+
+        audioService.startPlaylist(files)
     } catch (error) {
         console.error('Failed to open folder or play playlist:', error)
     }
 })
 
+window.playerState = playerState
+window.sessionService = sessionService
+window.audioService = audioService

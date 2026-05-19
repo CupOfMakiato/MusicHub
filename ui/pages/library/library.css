@@ -1,0 +1,152 @@
+.libraryPage {
+    padding: 16px;
+}
+
+.libraryHeader h2 {
+    margin: 0;
+}
+
+.libraryHeader p {
+    margin-top: 6px;
+    color: #5f6368;
+}
+
+.libraryPlaylists {
+    margin-top: 14px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 300px));
+    justify-content: start;
+    gap: 12px;
+    position: relative;
+}
+
+.libraryPlaylistCard {
+    border: 1px solid #d7dde6;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #ffffff;
+    width: 300px;
+    height: 300px;
+    aspect-ratio: 1 / 1;
+    display: flex;
+    flex-direction: column;
+    cursor: pointer;
+}
+
+.libraryPlaylistCard:hover {
+    outline: 2px solid #5b8cff;
+    outline-offset: 2px;
+}
+
+.libraryPlaylistCard img {
+    width: 100%;
+    height: 58%;
+    object-fit: cover;
+    flex: 0 0 auto;
+}
+
+.libraryPlaylistContent {
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 0;
+    flex: 1 1 auto;
+}
+
+.libraryPlaylistContent h3 {
+    margin: 0;
+    font-size: 16px;
+}
+
+.libraryPlaylistContent p {
+    margin: 0;
+    color: #5f6368;
+    font-size: 13px;
+}
+
+.libraryPlaylistActions {
+    align-items: flex-end;
+    margin-top: auto;
+    display: flex;
+    justify-content: flex-end;
+    grid-template-columns: 1fr;
+    gap: 8px;
+}
+
+.playPlaylistBtn {
+    width: 40px;
+    height: 40px;
+    border: 1px solid #d6dbe3;
+    border-radius: 8px;
+    background: transparent;
+    color: #1f2937;
+    display: inline-flex;
+    position: relative;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+    overflow: hidden;
+}
+.playPlaylistBtn:hover {
+    background: #edf2f7;
+}
+
+.playPlaylistBtn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(4px);
+    transition:
+        opacity 160ms ease,
+        transform 160ms ease,
+        visibility 160ms ease;
+}
+
+.libraryPlaylistCard:hover .playPlaylistBtn,
+.libraryPlaylistCard:focus-within .playPlaylistBtn {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.libraryContextMenu {
+    display: none;
+    position: fixed;
+    min-width: 180px;
+    background: #ffffff;
+    border: 1px solid #d9dee7;
+    border-radius: 8px;
+    box-shadow: 0 8px 18px rgba(23, 31, 56, 0.12);
+    z-index: 2200;
+    padding: 6px;
+}
+
+.libraryContextMenu.is-open {
+    display: grid;
+    gap: 6px;
+}
+
+.deletePlaylistMenuBtn {
+    border: 1px solid #d6dbe3;
+    background: #ffffff;
+    border-radius: 8px;
+    min-height: 34px;
+    padding: 0 10px;
+    font-size: 12px;
+    font-weight: 600;
+    /* color: #8b1e2a; */
+    cursor: pointer;
+    text-align: left;
+}
+
+.deletePlaylistMenuBtn:hover {
+    background: #fff3f4;
+}
+
+.libraryEmpty {
+    margin-top: 10px;
+    color: #667085;
+}

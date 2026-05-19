@@ -1,4 +1,4 @@
-window.playerState = (() => {
+export const playerState = (() => {
 	const state = {
 		playlist: [],
 		currentTrackIndex: -1,
@@ -98,3 +98,5 @@ window.playerState = (() => {
         subscribe,
 	}
 })()
+
+window.playerState = playerState

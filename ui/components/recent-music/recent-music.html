@@ -1,4 +1,44 @@
 <div class="recentMusic">
     <h2>Recently Played</h2>
-    <div class="recentMusicList"></div>
+    <div class="recentTabs" role="tablist" aria-label="Recent views">
+        <button
+            id="recent-tab-all"
+            aria-controls="recentTabPanel"
+            type="button"
+            class="recentTabBtn is-active"
+            data-recent-tab="all"
+            role="tab"
+            aria-selected="true"
+        >
+            All
+        </button>
+        <button
+            id="recent-tab-playlist"
+            aria-controls="recentTabPanel"
+            type="button"
+            class="recentTabBtn"
+            data-recent-tab="playlist"
+            role="tab"
+            aria-selected="false"
+        >
+            Recent Playlists
+        </button>
+        <button
+            id="recent-tab-music"
+            aria-controls="recentTabPanel"
+            type="button"
+            class="recentTabBtn"
+            data-recent-tab="music"
+            role="tab"
+            aria-selected="false"
+        >
+            Recent Music
+        </button>
+    </div>
+    <div
+        class="recentTabContent"
+        id="recentTabPanel"
+        role="tabpanel"
+        aria-labelledby="recent-tab-all"
+    ></div>
 </div>

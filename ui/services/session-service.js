@@ -1,148 +1,481 @@
-window.sessionService = (() => {
-	const DEFAULT_VOLUME = 0.7
-	const MAX_RECENT_TRACKS = 20
+import { getBaseName } from '../utils/file-path.js'
+import { normalizeTrackRecord } from '../utils/track-record.js'
 
-	function normalizeVolume(value) {
-		const parsed = Number(value)
-		if (!Number.isFinite(parsed)) return DEFAULT_VOLUME
-		return Math.max(0, Math.min(1, parsed))
-	}
+export const sessionService = (() => {
+    const DEFAULT_VOLUME = 0.7
+    const MAX_RECENT_TRACKS = 10
+    const MAX_RECENT_FOLDER_PLAYLISTS = 8
+    const MAX_RECENT_FOLDER_TRACKS = 300
+    const USER_PLAYLISTS_KEY = 'musichub:user-playlists'
+    const RECENT_FOLDER_PLAYLISTS_KEY = 'musichub:recent-folder-playlists'
 
-	function hasAPI(methodName) {
-		return typeof window.electronAPI?.[methodName] === 'function'
-	}
+    function normalizeRecentFolderPlaylistTracks(tracks) {
+        if (!Array.isArray(tracks)) {
+            return []
+        }
 
-	async function loadSavedVolume() {
-		if (!hasAPI('getSavedVolume')) {
-			return DEFAULT_VOLUME
-		}
+        const uniqueTrackPaths = new Set()
+        return tracks
+            .map((track) => normalizeTrackRecord(track))
+            .filter((track) => {
+                if (!track?.filePath || uniqueTrackPaths.has(track.filePath)) {
+                    return false
+                }
 
-		try {
-			const value = await window.electronAPI.getSavedVolume()
-			return normalizeVolume(value)
-		} catch (error) {
-			console.error('Failed to load saved volume:', error)
-			return DEFAULT_VOLUME
-		}
-	}
+                uniqueTrackPaths.add(track.filePath)
+                return true
+            })
+            .slice(0, MAX_RECENT_FOLDER_TRACKS)
+    }
 
-	async function saveVolume(volume) {
-		if (!hasAPI('saveVolume')) {
-			return false
-		}
+    function parseIsoDateToNumber(value) {
+        const parsed = Date.parse(value)
+        return Number.isFinite(parsed) ? parsed : 0
+    }
 
-		try {
-			await window.electronAPI.saveVolume(normalizeVolume(volume))
-			return true
-		} catch (error) {
-			console.error('Failed to persist volume:', error)
-			return false
-		}
-	}
+    function normalizeRecentFolderPlaylists(playlists) {
+        if (!Array.isArray(playlists)) {
+            return []
+        }
 
-	async function loadPlaylist() {
-		if (!hasAPI('loadPlaylist')) {
-			return { playlist: [], currentTrackIndex: -1, playbackPosition: 0 }
-		}
+        return playlists
+            .map((playlist) => {
+                const folderPath =
+                    typeof playlist?.folderPath === 'string' ? playlist.folderPath.trim() : ''
+                if (!folderPath) {
+                    return null
+                }
 
-		try {
-			const result = await window.electronAPI.loadPlaylist()
-			const playbackPosition = Number(result?.playbackPosition)
-			return {
-				playlist: Array.isArray(result?.playlist) ? result.playlist : [],
-				currentTrackIndex: Number.isInteger(result?.currentTrackIndex) ? result.currentTrackIndex : -1,
-				playbackPosition: Number.isFinite(playbackPosition) && playbackPosition >= 0 ? playbackPosition : 0,
-			}
-		} catch (error) {
-			console.error('Failed to load playlist:', error)
-			return { playlist: [], currentTrackIndex: -1, playbackPosition: 0 }
-		}
-	}
+                const tracks = normalizeRecentFolderPlaylistTracks(playlist?.tracks)
+                if (!tracks.length) {
+                    return null
+                }
 
-	async function savePlaylist(playlist, currentTrackIndex, playbackPosition = 0) {
-		if (!hasAPI('savePlaylist')) {
-			return false
-		}
+                const now = new Date().toISOString()
+                return {
+                    id:
+                        typeof playlist?.id === 'string' && playlist.id.trim()
+                            ? playlist.id.trim()
+                            : `recent-folder-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
+                    folderPath,
+                    name:
+                        typeof playlist?.name === 'string' && playlist.name.trim()
+                            ? playlist.name.trim()
+                            : getBaseName(folderPath, 'Folder Playlist'),
+                    tracks,
+                    createdAt: typeof playlist?.createdAt === 'string' ? playlist.createdAt : now,
+                    updatedAt: typeof playlist?.updatedAt === 'string' ? playlist.updatedAt : now,
+                }
+            })
+            .filter(Boolean)
+            .sort((a, b) => parseIsoDateToNumber(b.updatedAt) - parseIsoDateToNumber(a.updatedAt))
+            .slice(0, MAX_RECENT_FOLDER_PLAYLISTS)
+    }
 
-		try {
-			const safePlaylist = Array.isArray(playlist) ? playlist : []
-			const safeIndex = Number.isInteger(currentTrackIndex) ? currentTrackIndex : -1
-			const parsedPosition = Number(playbackPosition)
-			const safePlaybackPosition = Number.isFinite(parsedPosition) && parsedPosition >= 0 ? parsedPosition : 0
-			const saved = await window.electronAPI.savePlaylist(safePlaylist, safeIndex, safePlaybackPosition)
-			return Boolean(saved)
-		} catch (error) {
-			console.error('Failed to persist playlist:', error)
-			return false
-		}
-	}
+    function normalizeVolume(value) {
+        const parsed = Number(value)
+        if (!Number.isFinite(parsed)) return DEFAULT_VOLUME
+        return Math.max(0, Math.min(1, parsed))
+    }
 
-	async function loadRecentTracks() {
-		if (!hasAPI('loadRecentTracks')) {
-			return []
-		}
+    function hasAPI(methodName) {
+        return typeof window.electronAPI?.[methodName] === 'function'
+    }
 
-		try {
-			const tracks = await window.electronAPI.loadRecentTracks()
-			return Array.isArray(tracks) ? tracks : []
-		} catch (error) {
-			console.error('Failed to load recent tracks:', error)
-			return []
-		}
-	}
+    async function loadSavedVolume() {
+        if (!hasAPI('getSavedVolume')) {
+            return DEFAULT_VOLUME
+        }
 
-	async function saveRecentTracks(tracks) {
-		if (!hasAPI('saveRecentTracks')) {
-			return false
-		}
+        try {
+            const value = await window.electronAPI.getSavedVolume()
+            return normalizeVolume(value)
+        } catch (error) {
+            console.error('Failed to load saved volume:', error)
+            return DEFAULT_VOLUME
+        }
+    }
 
-		try {
-			const safeTracks = Array.isArray(tracks) ? tracks.slice(0, MAX_RECENT_TRACKS) : []
-			const saved = await window.electronAPI.saveRecentTracks(safeTracks)
-			if (saved) {
-				window.dispatchEvent(new CustomEvent('recent-tracks:updated'))
-			}
-			return Boolean(saved)
-		} catch (error) {
-			console.error('Failed to save recent tracks:', error)
-			return false
-		}
-	}
+    async function saveVolume(volume) {
+        if (!hasAPI('saveVolume')) {
+            return false
+        }
 
-	async function prependRecentTrack(track) {
-		if (!track?.filePath) {
-			return false
-		}
+        try {
+            await window.electronAPI.saveVolume(normalizeVolume(volume))
+            return true
+        } catch (error) {
+            console.error('Failed to persist volume:', error)
+            return false
+        }
+    }
 
-		const recent = await loadRecentTracks()
-		const updated = [track, ...recent].filter((item, index, self) =>
-			index === self.findIndex((entry) => entry.filePath === item.filePath)
-		)
+    async function loadPlaylist() {
+        if (!hasAPI('loadPlaylist')) {
+            return { playlist: [], currentTrackIndex: -1, playbackPosition: 0 }
+        }
 
-		return saveRecentTracks(updated)
-	}
+        try {
+            const result = await window.electronAPI.loadPlaylist()
+            const playbackPosition = Number(result?.playbackPosition)
+            return {
+                playlist: Array.isArray(result?.playlist) ? result.playlist : [],
+                currentTrackIndex: Number.isInteger(result?.currentTrackIndex)
+                    ? result.currentTrackIndex
+                    : -1,
+                playbackPosition:
+                    Number.isFinite(playbackPosition) && playbackPosition >= 0
+                        ? playbackPosition
+                        : 0,
+            }
+        } catch (error) {
+            console.error('Failed to load playlist:', error)
+            return { playlist: [], currentTrackIndex: -1, playbackPosition: 0 }
+        }
+    }
 
-	async function approveRecentAudioPath(filePath) {
-		if (!hasAPI('approveRecentAudioPath')) {
-			return false
-		}
+    async function savePlaylist(playlist, currentTrackIndex, playbackPosition = 0) {
+        if (!hasAPI('savePlaylist')) {
+            return false
+        }
 
-		try {
-			return Boolean(await window.electronAPI.approveRecentAudioPath(filePath))
-		} catch (error) {
-			console.error('Failed to approve recent audio path:', error)
-			return false
-		}
-	}
+        try {
+            const safePlaylist = Array.isArray(playlist) ? playlist : []
+            const safeIndex = Number.isInteger(currentTrackIndex) ? currentTrackIndex : -1
+            const parsedPosition = Number(playbackPosition)
+            const safePlaybackPosition =
+                Number.isFinite(parsedPosition) && parsedPosition >= 0 ? parsedPosition : 0
+            const saved = await window.electronAPI.savePlaylist(
+                safePlaylist,
+                safeIndex,
+                safePlaybackPosition,
+            )
+            return Boolean(saved)
+        } catch (error) {
+            console.error('Failed to persist playlist:', error)
+            return false
+        }
+    }
 
-	return {
-		loadSavedVolume,
-		saveVolume,
-		loadPlaylist,
-		savePlaylist,
-		loadRecentTracks,
-		saveRecentTracks,
-		prependRecentTrack,
-		approveRecentAudioPath,
-	}
+    async function loadRecentTracks() {
+        if (!hasAPI('loadRecentTracks')) {
+            return []
+        }
+
+        try {
+            const tracks = await window.electronAPI.loadRecentTracks()
+            return Array.isArray(tracks) ? tracks : []
+        } catch (error) {
+            console.error('Failed to load recent tracks:', error)
+            return []
+        }
+    }
+
+    async function saveRecentTracks(tracks) {
+        if (!hasAPI('saveRecentTracks')) {
+            return false
+        }
+
+        try {
+            const safeTracks = Array.isArray(tracks) ? tracks.slice(0, MAX_RECENT_TRACKS) : []
+            const saved = await window.electronAPI.saveRecentTracks(safeTracks)
+            if (saved) {
+                window.dispatchEvent(new CustomEvent('recent-tracks:updated'))
+            }
+            return Boolean(saved)
+        } catch (error) {
+            console.error('Failed to save recent tracks:', error)
+            return false
+        }
+    }
+
+    async function prependRecentTrack(track) {
+        if (!track?.filePath) {
+            return false
+        }
+
+        const recent = await loadRecentTracks()
+        const updated = [track, ...recent].filter(
+            (item, index, self) =>
+                index === self.findIndex((entry) => entry.filePath === item.filePath),
+        )
+
+        return saveRecentTracks(updated)
+    }
+
+    async function approveRecentAudioPath(filePath) {
+        if (!hasAPI('approveRecentAudioPath')) {
+            return false
+        }
+
+        try {
+            return Boolean(await window.electronAPI.approveRecentAudioPath(filePath))
+        } catch (error) {
+            console.error('Failed to approve recent audio path:', error)
+            return false
+        }
+    }
+
+    function normalizeUserPlaylists(playlists) {
+        if (!Array.isArray(playlists)) {
+            return []
+        }
+
+        return playlists
+            .map((playlist) => ({
+                id:
+                    typeof playlist?.id === 'string'
+                        ? playlist.id
+                        : `playlist-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
+                name:
+                    typeof playlist?.name === 'string' && playlist.name.trim()
+                        ? playlist.name.trim()
+                        : 'Untitled Playlist',
+                banner: typeof playlist?.banner === 'string' ? playlist.banner : '',
+                tracks: Array.isArray(playlist?.tracks)
+                    ? playlist.tracks.map((track) => normalizeTrackRecord(track)).filter(Boolean)
+                    : [],
+                createdAt:
+                    typeof playlist?.createdAt === 'string'
+                        ? playlist.createdAt
+                        : new Date().toISOString(),
+                updatedAt:
+                    typeof playlist?.updatedAt === 'string'
+                        ? playlist.updatedAt
+                        : new Date().toISOString(),
+            }))
+            .filter((playlist) => Boolean(playlist.id))
+    }
+
+    async function loadUserPlaylists() {
+        try {
+            const raw = window.localStorage.getItem(USER_PLAYLISTS_KEY)
+            if (!raw) {
+                return []
+            }
+
+            const parsed = JSON.parse(raw)
+            return normalizeUserPlaylists(parsed)
+        } catch (error) {
+            console.error('Failed to load user playlists:', error)
+            return []
+        }
+    }
+
+    async function saveUserPlaylists(playlists) {
+        try {
+            const normalized = normalizeUserPlaylists(playlists)
+            window.localStorage.setItem(USER_PLAYLISTS_KEY, JSON.stringify(normalized))
+            window.dispatchEvent(new CustomEvent('user-playlists:updated'))
+            return true
+        } catch (error) {
+            console.error('Failed to save user playlists:', error)
+            return false
+        }
+    }
+
+    async function addTrackToUserPlaylist(playlistId, track) {
+        if (!playlistId) {
+            return false
+        }
+
+        return addTracksToUserPlaylist(playlistId, [track])
+    }
+
+    async function addTracksToUserPlaylist(playlistId, tracks) {
+        if (!playlistId || !Array.isArray(tracks)) {
+            return false
+        }
+
+        const normalizedTracks = tracks.map((track) => normalizeTrackRecord(track)).filter(Boolean)
+        if (!normalizedTracks.length) {
+            return false
+        }
+
+        const playlists = await loadUserPlaylists()
+        const target = playlists.find((playlist) => playlist.id === playlistId)
+        if (!target) {
+            return false
+        }
+
+        if (!Array.isArray(target.tracks)) {
+            target.tracks = []
+        }
+
+        const existingTrackPaths = new Set(
+            target.tracks.map((item) => item?.filePath).filter(Boolean),
+        )
+        let appended = false
+        normalizedTracks.forEach((track) => {
+            if (existingTrackPaths.has(track.filePath)) {
+                return
+            }
+
+            target.tracks.push(track)
+            existingTrackPaths.add(track.filePath)
+            appended = true
+        })
+
+        if (appended) {
+            target.updatedAt = new Date().toISOString()
+        }
+
+        return saveUserPlaylists(playlists)
+    }
+
+    async function createUserPlaylist({ name, banner = '' }) {
+        const playlists = await loadUserPlaylists()
+        const now = new Date().toISOString()
+        const newPlaylist = {
+            id: `playlist-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
+            name:
+                typeof name === 'string' && name.trim()
+                    ? name.trim()
+                    : `New Playlist ${playlists.length + 1}`,
+            banner: typeof banner === 'string' ? banner.trim() : '',
+            tracks: [],
+            createdAt: now,
+            updatedAt: now,
+        }
+
+        const saved = await saveUserPlaylists([newPlaylist, ...playlists])
+        return saved ? newPlaylist : null
+    }
+
+    async function createPlaylistAndAddTrack({ name, banner = '', track }) {
+        return createUserPlaylistWithTracks({
+            name,
+            banner,
+            tracks: [track],
+        })
+    }
+
+    async function createUserPlaylistWithTracks({ name, banner = '', tracks = [] }) {
+        const normalizedTracks = tracks.map((track) => normalizeTrackRecord(track)).filter(Boolean)
+
+        const uniqueTrackPaths = new Set()
+        const uniqueTracks = normalizedTracks.filter((track) => {
+            if (uniqueTrackPaths.has(track.filePath)) {
+                return false
+            }
+
+            uniqueTrackPaths.add(track.filePath)
+            return true
+        })
+
+        if (!uniqueTracks.length) {
+            return null
+        }
+
+        const playlists = await loadUserPlaylists()
+        const now = new Date().toISOString()
+        const newPlaylist = {
+            id: `playlist-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
+            name:
+                typeof name === 'string' && name.trim()
+                    ? name.trim()
+                    : `New Playlist ${playlists.length + 1}`,
+            banner: typeof banner === 'string' ? banner.trim() : '',
+            tracks: uniqueTracks,
+            createdAt: now,
+            updatedAt: now,
+        }
+
+        const saved = await saveUserPlaylists([newPlaylist, ...playlists])
+        return saved ? newPlaylist : null
+    }
+
+    async function loadRecentFolderPlaylists() {
+        try {
+            const raw = window.localStorage.getItem(RECENT_FOLDER_PLAYLISTS_KEY)
+            if (!raw) {
+                return []
+            }
+
+            const parsed = JSON.parse(raw)
+            return normalizeRecentFolderPlaylists(parsed)
+        } catch (error) {
+            console.error('Failed to load recent folder playlists:', error)
+            return []
+        }
+    }
+
+    async function saveRecentFolderPlaylists(playlists) {
+        try {
+            const normalized = normalizeRecentFolderPlaylists(playlists)
+            window.localStorage.setItem(RECENT_FOLDER_PLAYLISTS_KEY, JSON.stringify(normalized))
+            window.dispatchEvent(new CustomEvent('recent-folder-playlists:updated'))
+            return true
+        } catch (error) {
+            console.error('Failed to save recent folder playlists:', error)
+            return false
+        }
+    }
+
+    async function prependRecentFolderPlaylist({ folderPath, name, tracks }) {
+        const safeFolderPath = typeof folderPath === 'string' ? folderPath.trim() : ''
+        if (!safeFolderPath) {
+            return null
+        }
+
+        const normalizedTracks = normalizeRecentFolderPlaylistTracks(tracks)
+        if (!normalizedTracks.length) {
+            return null
+        }
+
+        const recentFolderPlaylists = await loadRecentFolderPlaylists()
+        const now = new Date().toISOString()
+        const fallbackName = getBaseName(safeFolderPath, 'Folder Playlist')
+        const safeName = typeof name === 'string' && name.trim() ? name.trim() : fallbackName
+        const existing = recentFolderPlaylists.find(
+            (playlist) => playlist.folderPath === safeFolderPath,
+        )
+
+        const nextEntry = existing
+            ? {
+                  ...existing,
+                  name: safeName,
+                  tracks: normalizedTracks,
+                  updatedAt: now,
+              }
+            : {
+                  id: `recent-folder-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
+                  folderPath: safeFolderPath,
+                  name: safeName,
+                  tracks: normalizedTracks,
+                  createdAt: now,
+                  updatedAt: now,
+              }
+
+        const nextRecentFolderPlaylists = [
+            nextEntry,
+            ...recentFolderPlaylists.filter((playlist) => playlist.folderPath !== safeFolderPath),
+        ].slice(0, MAX_RECENT_FOLDER_PLAYLISTS)
+
+        const saved = await saveRecentFolderPlaylists(nextRecentFolderPlaylists)
+        return saved ? nextEntry : null
+    }
+
+    return {
+        loadSavedVolume,
+        saveVolume,
+        loadPlaylist,
+        savePlaylist,
+        loadRecentTracks,
+        saveRecentTracks,
+        prependRecentTrack,
+        approveRecentAudioPath,
+        loadUserPlaylists,
+        saveUserPlaylists,
+        addTrackToUserPlaylist,
+        addTracksToUserPlaylist,
+        createUserPlaylist,
+        createUserPlaylistWithTracks,
+        createPlaylistAndAddTrack,
+        loadRecentFolderPlaylists,
+        saveRecentFolderPlaylists,
+        prependRecentFolderPlaylist,
+    }
 })()
+
+window.sessionService = sessionService
