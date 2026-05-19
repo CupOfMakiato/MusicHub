@@ -30,9 +30,10 @@ export function clearUndo() {
 }
 
 let _keyHandler = null
+let _boundTarget = null
 export function attachUndoShortcut(target = window) {
     try {
-        detachUndoShortcut(target)
+        detachUndoShortcut()
         _keyHandler = (e) => {
             const key = e.key ? e.key.toLowerCase() : ''
             const isMac =
@@ -44,6 +45,7 @@ export function attachUndoShortcut(target = window) {
             }
         }
         target.addEventListener('keydown', _keyHandler)
+        _boundTarget = target
     } catch (e) {
         console.error('attachUndoShortcut failed', e)
     }
@@ -52,9 +54,11 @@ export function attachUndoShortcut(target = window) {
 export function detachUndoShortcut(target = window) {
     if (!_keyHandler) return
     try {
-        target.removeEventListener('keydown', _keyHandler)
+        const boundTarget = _boundTarget || target
+        boundTarget.removeEventListener('keydown', _keyHandler)
     } catch (err) {
         console.error('detachUndoShortcut failed', err)
     }
     _keyHandler = null
+    _boundTarget = null
 }

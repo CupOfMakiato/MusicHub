@@ -146,13 +146,20 @@ export function initializeRecentMusic() {
                     return
                 }
 
-                const shouldCloseMenu = await action(target)
-                if (shouldCloseMenu) {
-                    const openMenu = button?.closest('.trackActionsMenu, .recentFolderActionsMenu')
-                    if (openMenu) {
-                        openMenu.classList.remove('is-open')
-                        resetActionsMenuPosition(openMenu)
+                try {
+                    const shouldCloseMenu = await action(target)
+                    if (shouldCloseMenu) {
+                        const openMenu = button?.closest(
+                            '.trackActionsMenu, .recentFolderActionsMenu',
+                        )
+                        if (openMenu) {
+                            openMenu.classList.remove('is-open')
+                            resetActionsMenuPosition(openMenu)
+                        }
                     }
+                } catch (err) {
+                    console.error('recent-music action failed', err)
+                    return
                 }
             })
         })

@@ -3,6 +3,20 @@
 import Sortable from '../../../node_modules/sortablejs/modular/sortable.esm.js'
 import { getDataAttributeIndex } from '../../utils/dom-helpers.js'
 
+function isValidTrackIndex(index, tracks) {
+    return Number.isInteger(index) && index >= 0 && index < tracks.length
+}
+
+function hasUniqueValidTrackIndices(indices, tracks) {
+    if (!Array.isArray(indices) || indices.length !== tracks.length) return false
+
+    const uniqueIndices = new Set(indices)
+    return (
+        uniqueIndices.size === indices.length &&
+        indices.every((index) => isValidTrackIndex(index, tracks))
+    )
+}
+
 export function createPlaylistSortable({ body, getActivePlaylist, getPlaylists, onReorder } = {}) {
     if (!body) return { destroy: () => {} }
     if (typeof Sortable !== 'function') return { destroy: () => {} }
@@ -61,23 +75,20 @@ export function createPlaylistSortable({ body, getActivePlaylist, getPlaylists, 
 
                     let newTracks = null
 
-                    if (visibleIndices.length === activePlaylist.tracks.length) {
-                        newTracks = visibleIndices.map((idx) => activePlaylist.tracks[idx])
-                    } else {
+                    const buildMovedTracks = () => {
                         // Virtualized list: compute new order by moving the dragged item in the full array
-                        const sourceAttr = evt.item?.getAttribute
-                            ? evt.item.getAttribute('data-track-index')
-                            : null
-                        const sourceIndex = Number.isInteger(Number(sourceAttr))
-                            ? Number(sourceAttr)
-                            : null
+                        const sourceIndex = getDataAttributeIndex(evt.item, 'data-track-index')
 
-                        if (sourceIndex === null) {
+                        if (!isValidTrackIndex(sourceIndex, activePlaylist.tracks)) {
                             console.warn('Could not determine source index after drag')
-                            return
+                            return null
                         }
 
                         const newIndexInRows = rows.indexOf(evt.item)
+                        if (newIndexInRows === -1) {
+                            console.warn('Could not determine dragged row position after drag')
+                            return null
+                        }
 
                         // Determine global insertion index
                         let insertionGlobal = null
@@ -85,7 +96,11 @@ export function createPlaylistSortable({ body, getActivePlaylist, getPlaylists, 
                         const nextRow = rows[newIndexInRows + 1]
                         if (nextRow) {
                             const nextGlobal = getDataAttributeIndex(nextRow, 'data-track-index')
-                            if (nextGlobal !== null) insertionGlobal = nextGlobal
+                            if (!isValidTrackIndex(nextGlobal, activePlaylist.tracks)) {
+                                console.warn('Could not determine valid next row index after drag')
+                                return null
+                            }
+                            insertionGlobal = nextGlobal
                         } else {
                             const prevRow = rows[newIndexInRows - 1]
                             if (prevRow) {
@@ -93,27 +108,59 @@ export function createPlaylistSortable({ body, getActivePlaylist, getPlaylists, 
                                     prevRow,
                                     'data-track-index',
                                 )
-                                if (prevGlobal !== null) insertionGlobal = prevGlobal + 1
+                                if (!isValidTrackIndex(prevGlobal, activePlaylist.tracks)) {
+                                    console.warn(
+                                        'Could not determine valid previous row index after drag',
+                                    )
+                                    return null
+                                }
+                                insertionGlobal = prevGlobal + 1
                             }
                         }
 
                         // Fallback: if still null, append to end
                         if (insertionGlobal === null) insertionGlobal = activePlaylist.tracks.length
+                        if (
+                            !Number.isInteger(insertionGlobal) ||
+                            insertionGlobal < 0 ||
+                            insertionGlobal > activePlaylist.tracks.length
+                        ) {
+                            console.warn('Reorder produced invalid insertion index - aborting save')
+                            return null
+                        }
 
                         // Build new tracks by moving sourceIndex -> insertionGlobal
                         const copy = activePlaylist.tracks.slice()
                         const [moved] = copy.splice(sourceIndex, 1)
+                        if (moved === undefined) {
+                            console.warn('Reorder produced an empty moved track - aborting save')
+                            return null
+                        }
                         let destIndex = insertionGlobal
                         if (sourceIndex < destIndex) destIndex--
                         if (destIndex < 0) destIndex = 0
                         if (destIndex > copy.length) destIndex = copy.length
                         copy.splice(destIndex, 0, moved)
-                        newTracks = copy
+                        return copy
+                    }
+
+                    if (visibleIndices.length === activePlaylist.tracks.length) {
+                        if (hasUniqueValidTrackIndices(visibleIndices, activePlaylist.tracks)) {
+                            newTracks = visibleIndices.map((idx) => activePlaylist.tracks[idx])
+                        } else {
+                            console.warn(
+                                'Invalid visible track indices after drag - falling back to move reorder',
+                            )
+                            newTracks = buildMovedTracks()
+                        }
+                    } else {
+                        newTracks = buildMovedTracks()
                     }
 
                     if (
                         !Array.isArray(newTracks) ||
-                        newTracks.length !== activePlaylist.tracks.length
+                        newTracks.length !== activePlaylist.tracks.length ||
+                        newTracks.some((track) => track === undefined)
                     ) {
                         console.warn('Reorder produced mismatched track count - aborting save')
                         return
