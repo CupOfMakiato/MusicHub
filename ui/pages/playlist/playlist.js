@@ -1,24 +1,17 @@
 import {
-    escapeHtml,
     attachIndexedMenuToggle,
     getDataAttributeIndex,
     bindImageFallback,
     bindImageFallbacks,
 } from '../../utils/dom-helpers.js'
-import { formatDate } from '../../utils/date.js'
+import { createPlaylistSortable } from './playlist-sortable.js'
+import { renderTrackRow } from './playlist-row-renderer.js'
+import { pushUndo, attachUndoShortcut, detachUndoShortcut } from '../../services/undo-service.js'
+//formatDate in rowrederer
 import { formatDurationClock, formatDurationVerbose } from '../../utils/duration.js'
 import { toFileUrl } from '../../utils/file-path.js'
-import {
-    resolvePlaylistImage,
-    extractPlaylistFilePaths,
-    resolveTrackImage,
-} from '../../utils/playlist-media.js'
-import {
-    normalizeTrackRecord,
-    DEFAULT_TRACK_TITLE,
-    DEFAULT_TRACK_ARTIST,
-    DEFAULT_TRACK_ALBUM,
-} from '../../utils/track-record.js'
+import { resolvePlaylistImage, extractPlaylistFilePaths } from '../../utils/playlist-media.js'
+import { normalizeTrackRecord } from '../../utils/track-record.js'
 import { sessionService } from '../../services/session-service.js'
 import { audioService } from '../../services/audio-service.js'
 import { isRouteActive } from '../../utils/route.js'
@@ -59,6 +52,8 @@ export function initializePlaylistPage() {
     let virtualizer = null
     let virtualizerScrollHandler = null
     let scrollRaf = null
+    let sortableInstance = null
+    let isSavingPlaylistOrder = false
 
     function renderPlayButtonIcon() {
         const existingIcon = playButton.querySelector('i')
@@ -266,6 +261,87 @@ export function initializePlaylistPage() {
         })
     }
 
+    function initializeSortableIfNeeded() {
+        if (!body) return
+
+        if (sortableInstance && typeof sortableInstance.destroy === 'function') {
+            try {
+                sortableInstance.destroy()
+            } catch (e) {
+                console.error('Failed to destroy existing Sortable instance', e)
+            }
+            sortableInstance = null
+        }
+
+        if (typeof createPlaylistSortable !== 'function') return
+
+        const usingNonLocalVirtualizer = !!virtualizer && !virtualizer.local
+        if (usingNonLocalVirtualizer) return
+
+        try {
+            sortableInstance = createPlaylistSortable({
+                body,
+                getActivePlaylist,
+                getPlaylists: () => playlists,
+                onReorder: async (updatedPlaylists) => {
+                    // capture previous state for undo
+                    const previousPlaylists = playlists.map((p) => ({
+                        ...p,
+                        tracks: Array.isArray(p.tracks) ? p.tracks.slice() : p.tracks,
+                    }))
+
+                    isSavingPlaylistOrder = true
+                    try {
+                        const saved = await sessionService.saveUserPlaylists(updatedPlaylists)
+                        if (!saved) {
+                            console.error('Failed to save reordered playlist')
+                            render()
+                            return
+                        }
+
+                        // push undo action (closure uses previousPlaylists)
+                        pushUndo(
+                            async () => {
+                                isSavingPlaylistOrder = true
+                                try {
+                                    const undone =
+                                        await sessionService.saveUserPlaylists(previousPlaylists)
+                                    if (!undone) {
+                                        console.error('Failed to undo playlist reorder')
+                                        return
+                                    }
+
+                                    playlists = previousPlaylists
+                                    activePlaylistId = getActivePlaylist()?.id || activePlaylistId
+                                    window.playlistViewState = { activePlaylistId }
+                                    render()
+                                } catch (err) {
+                                    console.error('Error while undoing playlist reorder', err)
+                                } finally {
+                                    isSavingPlaylistOrder = false
+                                }
+                            },
+                            { label: 'Undo playlist reorder' },
+                        )
+
+                        playlists = updatedPlaylists
+                        activePlaylistId = getActivePlaylist()?.id || activePlaylistId
+                        window.playlistViewState = { activePlaylistId }
+                        render()
+                    } catch (e) {
+                        console.error('Failed to save reordered playlist', e)
+                        render()
+                        return
+                    } finally {
+                        isSavingPlaylistOrder = false
+                    }
+                },
+            })
+        } catch (err) {
+            console.error('Failed to initialize Sortable', err)
+        }
+    }
+
     function renderTracks(activePlaylist) {
         if (typeof cleanupTrackMenuToggles === 'function') {
             cleanupTrackMenuToggles()
@@ -275,8 +351,15 @@ export function initializePlaylistPage() {
         const tracks = activePlaylist?.tracks || []
 
         if (!tracks.length) {
-            body.innerHTML =
-                '<tr><td colspan="7" class="playlistEmptyRow">No tracks in this playlist yet.</td></tr>'
+            // Render a single empty-row node instead of string HTML
+            body.innerHTML = ''
+            const tr = document.createElement('tr')
+            const td = document.createElement('td')
+            td.colSpan = 7
+            td.className = 'playlistEmptyRow'
+            td.textContent = 'No tracks in this playlist yet.'
+            tr.appendChild(td)
+            body.appendChild(tr)
             if (virtualizer && typeof virtualizer.setOptions === 'function') {
                 virtualizer.setOptions({
                     ...virtualizer.options,
@@ -288,7 +371,8 @@ export function initializePlaylistPage() {
 
         const canVirtualize = typeof createVirtualizer === 'function'
 
-        let html = ''
+        // Build rows as DOM nodes into a DocumentFragment
+        const fragment = document.createDocumentFragment()
 
         if (canVirtualize) {
             if (!virtualizer) {
@@ -325,78 +409,39 @@ export function initializePlaylistPage() {
                     ? virtualizer.getTotalSize() - virtualItems[virtualItems.length - 1].end
                     : 0
 
-            html +=
-                paddingTop > 0
-                    ? `<tr class="virtual-padding-top"><td colspan="7" style="height: ${paddingTop}px"></td></tr>`
-                    : ''
+            if (paddingTop > 0) {
+                const trTop = document.createElement('tr')
+                trTop.className = 'virtual-padding-top'
+                const tdTop = document.createElement('td')
+                tdTop.colSpan = 7
+                tdTop.style.height = `${paddingTop}px`
+                trTop.appendChild(tdTop)
+                fragment.appendChild(trTop)
+            }
 
-            html += virtualItems
-                .map((virtualItem) => {
-                    const index = virtualItem.index
-                    const track = tracks[index]
-                    const normalizedTrack = normalizeTrackRecord(track)
-                    const trackTitle = normalizedTrack?.title || DEFAULT_TRACK_TITLE
-                    const artist = normalizedTrack?.artist || DEFAULT_TRACK_ARTIST
-                    const album = normalizedTrack?.album || DEFAULT_TRACK_ALBUM
-                    const trackImage =
-                        resolveTrackImage(normalizedTrack) || './assets/music-placeholder.png'
-                    const dateAdded = formatDate(
-                        normalizedTrack?.playedAt || normalizedTrack?.addedAt,
-                    )
-                    const duration =
-                        typeof normalizedTrack?.duration === 'number' &&
-                        normalizedTrack.duration > 0
-                            ? normalizedTrack.duration
-                            : durationCache.get(normalizedTrack?.filePath)
+            virtualItems.forEach((virtualItem) => {
+                const index = virtualItem.index
+                const track = tracks[index]
+                const normalizedTrack = normalizeTrackRecord(track)
+                const duration =
+                    typeof normalizedTrack?.duration === 'number' &&
+                    normalizedTrack.duration > 0
+                        ? normalizedTrack.duration
+                        : durationCache.get(normalizedTrack?.filePath)
 
-                    return `
-                        <tr class="playlistTrackRow" data-track-index="${index}" style="height: ${
-                            virtualItem.size
-                        }px">
-                            <td class="playlistTrackIndexCell">
-                                <button
-                                    type="button"
-                                    class="playlistTrackIndexPlayBtn"
-                                    data-track-index="${index}"
-                                    aria-label="Play from track ${index + 1}"
-                                >
-                                    <span class="playlistTrackIndexValue">${index + 1}</span>
-                                    <i data-lucide="play" class="playlistTrackIndexPlayIcon" aria-hidden="true"></i>
-                                </button>
-                            </td>
-                            <td class="playlistTrackTitleCell">
-                                <div class="playlistTrackTitleWrap">
-                                    <img class="playlistTrackCover" src="${escapeHtml(
-                                        trackImage,
-                                    )}" alt="Track cover" draggable="false" />
-                                    <span class="playlistTrackTitleText">${escapeHtml(
-                                        trackTitle,
-                                    )}</span>
-                                </div>
-                            </td>
-                            <td>${escapeHtml(artist)}</td>
-                            <td>${escapeHtml(album)}</td>
-                            <td>${dateAdded}</td>
-                            <td data-duration-index="${index}">${formatDurationClock(duration)}</td>
-                            <td>
-                                <div class="playlistTrackActions">
-                                    <button type="button" class="playlistTrackMoreBtn" data-track-index="${index}" aria-label="Track actions">
-                                        <i data-lucide="ellipsis"></i>
-                                    </button>
-                                    <div class="playlistTrackMenu" data-track-index="${index}">
-                                        <button type="button" class="removeTrackBtn" data-track-index="${index}">Remove from Playlist</button>
-                                    </div>
-                                </div>
-                            </td>
-                        </tr>
-                    `
-                })
-                .join('')
+                const rowNode = renderTrackRow({ index, track, duration, rowHeight: virtualItem.size })
+                fragment.appendChild(rowNode)
+            })
 
-            html +=
-                paddingBottom > 0
-                    ? `<tr class="virtual-padding-bottom"><td colspan="7" style="height: ${paddingBottom}px"></td></tr>`
-                    : ''
+            if (paddingBottom > 0) {
+                const trBottom = document.createElement('tr')
+                trBottom.className = 'virtual-padding-bottom'
+                const tdBottom = document.createElement('td')
+                tdBottom.colSpan = 7
+                tdBottom.style.height = `${paddingBottom}px`
+                trBottom.appendChild(tdBottom)
+                fragment.appendChild(trBottom)
+            }
         } else {
             // Local virtualization fallback: compute visible window based on page scroll
             const ROW_ESTIMATE = 56
@@ -407,7 +452,7 @@ export function initializePlaylistPage() {
             let lastStart = -1
             let lastEnd = -1
 
-            function computeVirtualHtml() {
+            function computeVirtualRange() {
                 const scrollTop = (document.scrollingElement || document.documentElement).scrollTop
                 const viewportHeight = window.innerHeight || document.documentElement.clientHeight
                 const containerRect = trackContainer.getBoundingClientRect()
@@ -416,8 +461,7 @@ export function initializePlaylistPage() {
                 const contentStart = containerTop + headerHeight
 
                 let start = Math.floor((scrollTop - contentStart) / ROW_ESTIMATE) - OVERSCAN
-                let end =
-                    Math.ceil((scrollTop - contentStart + viewportHeight) / ROW_ESTIMATE) + OVERSCAN
+                let end = Math.ceil((scrollTop - contentStart + viewportHeight) / ROW_ESTIMATE) + OVERSCAN
 
                 if (start < 0) start = 0
                 if (end < 0) end = 0
@@ -431,76 +475,47 @@ export function initializePlaylistPage() {
                 const paddingTop = start * ROW_ESTIMATE
                 const paddingBottom = Math.max(0, (tracks.length - end - 1) * ROW_ESTIMATE)
 
-                let out = ''
-                out +=
-                    paddingTop > 0
-                        ? `<tr class="virtual-padding-top"><td colspan="7" style="height: ${paddingTop}px"></td></tr>`
-                        : ''
+                return { start, end, paddingTop, paddingBottom }
+            }
+
+            // initial render range
+            const range = computeVirtualRange()
+            if (range) {
+                const { start, end, paddingTop, paddingBottom } = range
+
+                if (paddingTop > 0) {
+                    const trTop = document.createElement('tr')
+                    trTop.className = 'virtual-padding-top'
+                    const tdTop = document.createElement('td')
+                    tdTop.colSpan = 7
+                    tdTop.style.height = `${paddingTop}px`
+                    trTop.appendChild(tdTop)
+                    fragment.appendChild(trTop)
+                }
 
                 for (let i = start; i <= end; i++) {
                     const track = tracks[i]
                     const normalizedTrack = normalizeTrackRecord(track)
-                    const trackTitle = normalizedTrack?.title || DEFAULT_TRACK_TITLE
-                    const artist = normalizedTrack?.artist || DEFAULT_TRACK_ARTIST
-                    const album = normalizedTrack?.album || DEFAULT_TRACK_ALBUM
-                    const trackImage =
-                        resolveTrackImage(normalizedTrack) || './assets/music-placeholder.png'
-                    const dateAdded = formatDate(
-                        normalizedTrack?.playedAt || normalizedTrack?.addedAt,
-                    )
                     const duration =
                         typeof normalizedTrack?.duration === 'number' &&
                         normalizedTrack.duration > 0
                             ? normalizedTrack.duration
                             : durationCache.get(normalizedTrack?.filePath)
 
-                    out += `
-                        <tr class="playlistTrackRow" data-track-index="${i}">
-                            <td class="playlistTrackIndexCell">
-                                <button
-                                    type="button"
-                                    class="playlistTrackIndexPlayBtn"
-                                    data-track-index="${i}"
-                                    aria-label="Play from track ${i + 1}"
-                                >
-                                    <span class="playlistTrackIndexValue">${i + 1}</span>
-                                    <i data-lucide="play" class="playlistTrackIndexPlayIcon" aria-hidden="true"></i>
-                                </button>
-                            </td>
-                            <td class="playlistTrackTitleCell">
-                                <div class="playlistTrackTitleWrap">
-                                    <img class="playlistTrackCover" src="${escapeHtml(trackImage)}" alt="Track cover" draggable="false" />
-                                    <span class="playlistTrackTitleText">${escapeHtml(trackTitle)}</span>
-                                </div>
-                            </td>
-                            <td>${escapeHtml(artist)}</td>
-                            <td>${escapeHtml(album)}</td>
-                            <td>${dateAdded}</td>
-                            <td data-duration-index="${i}">${formatDurationClock(duration)}</td>
-                            <td>
-                                <div class="playlistTrackActions">
-                                    <button type="button" class="playlistTrackMoreBtn" data-track-index="${i}" aria-label="Track actions">
-                                        <i data-lucide="ellipsis"></i>
-                                    </button>
-                                    <div class="playlistTrackMenu" data-track-index="${i}">
-                                        <button type="button" class="removeTrackBtn" data-track-index="${i}">Remove from Playlist</button>
-                                    </div>
-                                </div>
-                            </td>
-                        </tr>
-                    `
+                    const rowNode = renderTrackRow({ index: i, track, duration })
+                    fragment.appendChild(rowNode)
                 }
 
-                out +=
-                    paddingBottom > 0
-                        ? `<tr class="virtual-padding-bottom"><td colspan="7" style="height: ${paddingBottom}px"></td></tr>`
-                        : ''
-                return out
+                if (paddingBottom > 0) {
+                    const trBottom = document.createElement('tr')
+                    trBottom.className = 'virtual-padding-bottom'
+                    const tdBottom = document.createElement('td')
+                    tdBottom.colSpan = 7
+                    tdBottom.style.height = `${paddingBottom}px`
+                    trBottom.appendChild(tdBottom)
+                    fragment.appendChild(trBottom)
+                }
             }
-
-            // initial render
-            const initialHtml = computeVirtualHtml() || ''
-            html = initialHtml
 
             // attach scroll/resize handler to update visible range
             if (!virtualizer) {
@@ -509,22 +524,9 @@ export function initializePlaylistPage() {
                 virtualizerScrollHandler = () => {
                     if (scrollRaf) cancelAnimationFrame(scrollRaf)
                     scrollRaf = requestAnimationFrame(() => {
-                        const updated = computeVirtualHtml()
-                        if (updated !== null) {
-                            body.innerHTML = updated
-                            // run same post-render steps
-                            hydrateTrackDurations(activePlaylist)
-                            window.lucide?.createIcons()
-                            bindImageFallbacks({ scope: body, selector: '.playlistTrackCover' })
-                            cleanupTrackMenuToggles = attachIndexedMenuToggle({
-                                scope: body,
-                                triggerSelector: '.playlistTrackMoreBtn',
-                                menuSelector: '.playlistTrackMenu',
-                                indexAttribute: 'data-track-index',
-                            })
-
-                            // reattach interactive handlers
-                            attachTrackActionHandlers(body)
+                        const freshActivePlaylist = getActivePlaylist()
+                        if (freshActivePlaylist) {
+                            renderTracks(freshActivePlaylist)
                         }
                     })
                 }
@@ -534,7 +536,9 @@ export function initializePlaylistPage() {
             }
         }
 
-        body.innerHTML = html
+        // replace tbody content with constructed fragment
+        body.innerHTML = ''
+        body.appendChild(fragment)
 
         hydrateTrackDurations(activePlaylist)
         window.lucide?.createIcons()
@@ -551,6 +555,7 @@ export function initializePlaylistPage() {
         })
 
         attachTrackActionHandlers(body)
+        initializeSortableIfNeeded()
     }
 
     function renderHeader(activePlaylist) {
@@ -651,14 +656,26 @@ export function initializePlaylistPage() {
     })
 
     const onPlaylistsUpdated = () => {
+        if (isSavingPlaylistOrder) return
         if (isRouteActive(['playlist', 'queue'])) {
             hydrate()
         }
     }
     window.addEventListener('user-playlists:updated', onPlaylistsUpdated)
+    // Attach global undo shortcut for this page (Ctrl/Cmd+Z)
+    attachUndoShortcut()
 
     const cleanup = () => {
         window.removeEventListener('user-playlists:updated', onPlaylistsUpdated)
+        detachUndoShortcut()
+        if (sortableInstance && typeof sortableInstance.destroy === 'function') {
+            try {
+                sortableInstance.destroy()
+            } catch (e) {
+                console.error('Failed to destroy Sortable instance during cleanup', e)
+            }
+            sortableInstance = null
+        }
         if (typeof cleanupTrackMenuToggles === 'function') {
             cleanupTrackMenuToggles()
             cleanupTrackMenuToggles = null

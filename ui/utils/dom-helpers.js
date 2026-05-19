@@ -36,7 +36,7 @@ export function closeModalHost({ scope, hostClass = 'recentMusicModalHost' }) {
     modalHost.classList.remove('is-open')
 }
 
-export function openModal({ scope, contentHtml, hostClass = 'recentMusicModalHost' }) {
+export function openModal({ scope, contentHtml, contentNode, hostClass = 'recentMusicModalHost' }) {
     const modalHost = getOrCreateModalHost({ scope, hostClass })
     if (!modalHost) {
         return {
@@ -46,7 +46,14 @@ export function openModal({ scope, contentHtml, hostClass = 'recentMusicModalHos
     }
 
     modalHost.classList.add('is-open')
-    modalHost.innerHTML = String(contentHtml ?? '')
+    // clear any previous content to ensure a single modal host child tree
+    modalHost.innerHTML = ''
+    if (contentNode && contentNode instanceof Node) {
+        // append node(s) instead of using innerHTML for safer DOM construction
+        modalHost.appendChild(contentNode)
+    } else {
+        modalHost.innerHTML = String(contentHtml ?? '')
+    }
 
     const close = () => {
         closeModalHost({ scope, hostClass })
@@ -61,12 +68,13 @@ export function openModal({ scope, contentHtml, hostClass = 'recentMusicModalHos
 export function showModalPrompt({
     scope,
     contentHtml,
+    contentNode,
     hostClass = 'recentMusicModalHost',
     fallbackValue = null,
     onBind,
 }) {
     return new Promise((resolve) => {
-        const { modalHost, close } = openModal({ scope, contentHtml, hostClass })
+        const { modalHost, close } = openModal({ scope, contentHtml, contentNode, hostClass })
         if (!modalHost) {
             resolve(fallbackValue)
             return

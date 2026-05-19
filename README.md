@@ -4,7 +4,7 @@
 
 This repository is my attempt at exploring Electron (for cross-platform desktop application). This is a music player that will be developed over the course of my free-time.
 
-The ppplication use VanillaJs cuz i like torturing myself lel (jk idk)
+The application use VanillaJs cuz i like torturing myself lel (jk idk)
 
 ## Future TODO
 
