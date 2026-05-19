@@ -4,11 +4,11 @@ import {
     placeFloatingElement,
     bindGlobalDismissEvents,
     getDataAttributeIndex,
-    openModal,
     closeModalHost,
     showModalPrompt,
     bindModalResolve,
     bindImageFallbacks,
+    showNotice,
 } from '../../utils/dom-helpers.js'
 import { resolvePlaylistImage } from '../../utils/playlist-media.js'
 import { getBaseName } from '../../utils/file-path.js'
@@ -42,6 +42,7 @@ export function initializeRecentMusic() {
     let recentTracks = []
     let recentFolderPlaylists = []
     let userPlaylists = []
+    let tabButtonHandlers = []
 
     function normalizeTab(tab) {
         return RECENT_TABS.has(tab) ? tab : 'all'
@@ -134,32 +135,8 @@ export function initializeRecentMusic() {
     }
 
     function showMessage(message) {
-        const { modalHost, close } = openModal({
-            scope: recentMusic,
-            contentHtml: `
-            <div class="recentModalBackdrop" data-close="true"></div>
-            <div class="recentModalDialog" role="dialog" aria-modal="true">
-                <h3>Notice</h3>
-                <p>${escapeHtml(message)}</p>
-                <div class="recentModalActions">
-                    <button type="button" class="recentModalConfirmBtn">OK</button>
-                </div>
-            </div>
-            `,
-        })
-
-        if (!modalHost) {
-            return
-        }
-
-        bindModalResolve({
-            modalHost,
-            selector: '.recentModalConfirmBtn',
-            resolve: close,
-            value: undefined,
-        })
-
-        bindModalDismiss({ modalHost, resolve: close })
+        // Delegate to shared helper
+        showNotice({ scope: recentMusic, message })
     }
 
     function bindModalDismiss({ modalHost, resolve, value = null }) {
@@ -179,7 +156,7 @@ export function initializeRecentMusic() {
                 <div class="recentModalDialog" role="dialog" aria-modal="true">
                     <h3>${escapeHtml(title)}</h3>
                     <label class="recentModalFieldLabel" for="playlistNameInput">Playlist Name</label>
-                    <input id="playlistNameInput" class="recentModalInput" type="text" maxlength="120" placeholder="My Playlist" value="${escapeHtml(defaultName)}" />
+                    <input id="playlistNameInput" class="recentModalInput" type="text" maxlength="100" placeholder="My Playlist" value="${escapeHtml(defaultName)}" />
                     <div class="recentModalActions">
                         <button type="button" class="recentModalConfirmBtn">Create</button>
                         <button type="button" class="recentModalCancelBtn">Cancel</button>
@@ -885,6 +862,17 @@ export function initializeRecentMusic() {
             button.classList.toggle('is-active', isActive)
             button.setAttribute('aria-selected', String(isActive))
         })
+
+        // Update the tabpanel's aria-labelledby to point at the active tab button
+        const tabPanel = recentMusic.querySelector('#recentTabPanel')
+        if (tabPanel) {
+            const activeButton = recentMusic.querySelector('.recentTabBtn.is-active')
+            if (activeButton && activeButton.id) {
+                tabPanel.setAttribute('aria-labelledby', activeButton.id)
+            } else {
+                tabPanel.removeAttribute('aria-labelledby')
+            }
+        }
     }
 
     function bindTrackPlayActions() {
@@ -1066,9 +1054,10 @@ export function initializeRecentMusic() {
         }
     }
 
-    const tabButtons = recentMusic.querySelectorAll('.recentTabBtn')
+    const tabButtons = Array.from(recentMusic.querySelectorAll('.recentTabBtn'))
     tabButtons.forEach((button) => {
-        button.addEventListener('click', () => {
+        const clickHandler = (event) => {
+            event.stopPropagation()
             const selectedTab = normalizeTab(button.getAttribute('data-recent-tab') || 'all')
             if (selectedTab === activeTab) {
                 return
@@ -1078,7 +1067,10 @@ export function initializeRecentMusic() {
             applyTabUiState()
             closeAllActionMenus()
             renderRecentContent()
-        })
+        }
+
+        button.addEventListener('click', clickHandler)
+        tabButtonHandlers.push({ button, clickHandler })
     })
 
     applyTabUiState()
@@ -1122,6 +1114,18 @@ export function initializeRecentMusic() {
             cleanupGlobalMenuDismiss()
             cleanupGlobalMenuDismiss = null
         }
+
+        if (Array.isArray(tabButtonHandlers) && tabButtonHandlers.length) {
+            tabButtonHandlers.forEach(({ button, clickHandler }) => {
+                try {
+                    button.removeEventListener('click', clickHandler)
+                } catch (e) {
+                    void e
+                }
+            })
+            tabButtonHandlers = []
+        }
+
         clearMenuToggleBindings()
         closeAllActionMenus()
         closeModalHost({ scope: recentMusic })

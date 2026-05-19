@@ -83,6 +83,56 @@ export function showModalPrompt({
     })
 }
 
+export function showNotice({
+    scope,
+    title = 'Notice',
+    message = '',
+    okText = 'OK',
+    hostClass = 'recentMusicModalHost',
+}) {
+    if (!scope) {
+        return Promise.resolve()
+    }
+
+    const contentHtml = `
+        <div class="recentModalBackdrop" data-close="true"></div>
+        <div class="recentModalDialog" role="dialog" aria-modal="true">
+            <h3>${escapeHtml(title)}</h3>
+            <p>${escapeHtml(String(message || ''))}</p>
+            <div class="recentModalActions">
+                <button type="button" class="recentModalConfirmBtn">${escapeHtml(okText)}</button>
+            </div>
+        </div>
+    `
+
+    return showModalPrompt({
+        scope,
+        contentHtml,
+        hostClass,
+        fallbackValue: undefined,
+        onBind: ({ modalHost, resolve }) => {
+            if (!modalHost) {
+                resolve(undefined)
+                return
+            }
+
+            bindModalResolve({
+                modalHost,
+                selector: '.recentModalConfirmBtn',
+                resolve,
+                value: undefined,
+            })
+
+            bindModalResolve({
+                modalHost,
+                selector: '.recentModalBackdrop',
+                resolve,
+                value: undefined,
+            })
+        },
+    })
+}
+
 export function bindModalResolve({ modalHost, selector, resolve, value = null, getValue }) {
     if (!modalHost || !selector || typeof resolve !== 'function') {
         return

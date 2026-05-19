@@ -1,3 +1,5 @@
+// Node.js process entry point - responsible for creating the application window, handling IPC events, managing settings persistence, and enforcing security around file system access
+
 const path = require('path')
 const fs = require('fs')
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron')

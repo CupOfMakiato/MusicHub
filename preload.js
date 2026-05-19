@@ -1,3 +1,5 @@
+// bridge main.js and script.js - securely expose APIs for file system access, settings management, and playlist handling
+
 const { contextBridge, ipcRenderer, shell } = require('electron')
 
 contextBridge.exposeInMainWorld('electronAPI', {

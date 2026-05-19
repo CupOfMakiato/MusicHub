@@ -194,6 +194,78 @@ export function initializePlaylistPage() {
         return playlists.find((playlist) => playlist.id === activePlaylistId) || null
     }
 
+    function attachTrackActionHandlers(scopeElement) {
+        if (!scopeElement) return
+
+        const removeButtons = scopeElement.querySelectorAll('.removeTrackBtn')
+        removeButtons.forEach((button) => {
+            button.addEventListener('click', async (event) => {
+                event.stopPropagation()
+                event.preventDefault()
+
+                const trackIndex = getDataAttributeIndex(button, 'data-track-index')
+                const activePlaylist = getActivePlaylist()
+                if (!activePlaylist || trackIndex === null) {
+                    return
+                }
+
+                const nextTracks = Array.isArray(activePlaylist.tracks)
+                    ? activePlaylist.tracks.filter((_, index) => index !== trackIndex)
+                    : []
+
+                const updatedPlaylists = playlists.map((playlist) => {
+                    if (playlist.id !== activePlaylist.id) {
+                        return playlist
+                    }
+
+                    return {
+                        ...playlist,
+                        tracks: nextTracks,
+                        updatedAt: new Date().toISOString(),
+                    }
+                })
+
+                const saved = await sessionService.saveUserPlaylists(updatedPlaylists)
+                if (!saved) {
+                    console.error('Failed to save updated playlists when removing track')
+                    return
+                }
+
+                playlists = updatedPlaylists
+                activePlaylistId = activePlaylist.id
+                window.playlistViewState = { activePlaylistId }
+                render()
+            })
+        })
+
+        const indexPlayButtons = scopeElement.querySelectorAll('.playlistTrackIndexPlayBtn')
+        indexPlayButtons.forEach((button) => {
+            button.addEventListener('click', (event) => {
+                event.stopPropagation()
+                event.preventDefault()
+
+                const trackIndex = getDataAttributeIndex(button, 'data-track-index')
+                const activePlaylist = getActivePlaylist()
+                if (!activePlaylist || trackIndex === null) {
+                    return
+                }
+
+                const queueFilePaths = Array.isArray(activePlaylist.tracks)
+                    ? activePlaylist.tracks
+                          .slice(trackIndex)
+                          .map((track) => track?.filePath)
+                          .filter(Boolean)
+                    : []
+
+                if (!queueFilePaths.length) {
+                    return
+                }
+
+                audioService.startPlaylist(queueFilePaths)
+            })
+        })
+    }
+
     function renderTracks(activePlaylist) {
         if (typeof cleanupTrackMenuToggles === 'function') {
             cleanupTrackMenuToggles()
@@ -237,6 +309,7 @@ export function initializePlaylistPage() {
                     })
                 }
                 window.addEventListener('scroll', virtualizerScrollHandler, { passive: true })
+                window.addEventListener('resize', virtualizerScrollHandler, { passive: true })
             } else if (typeof virtualizer.setOptions === 'function') {
                 virtualizer.setOptions({
                     ...virtualizer.options,
@@ -451,86 +524,7 @@ export function initializePlaylistPage() {
                             })
 
                             // reattach interactive handlers
-                            const removeButtons = body.querySelectorAll('.removeTrackBtn')
-                            removeButtons.forEach((button) => {
-                                button.addEventListener('click', async (event) => {
-                                    event.stopPropagation()
-                                    event.preventDefault()
-
-                                    const trackIndex = getDataAttributeIndex(
-                                        button,
-                                        'data-track-index',
-                                    )
-                                    const activePlaylist = getActivePlaylist()
-                                    if (!activePlaylist || trackIndex === null) {
-                                        return
-                                    }
-
-                                    const nextTracks = Array.isArray(activePlaylist.tracks)
-                                        ? activePlaylist.tracks.filter(
-                                              (_, index) => index !== trackIndex,
-                                          )
-                                        : []
-
-                                    const updatedPlaylists = playlists.map((playlist) => {
-                                        if (playlist.id !== activePlaylist.id) {
-                                            return playlist
-                                        }
-
-                                        return {
-                                            ...playlist,
-                                            tracks: nextTracks,
-                                            updatedAt: new Date().toISOString(),
-                                        }
-                                    })
-
-                                    const saved =
-                                        await sessionService.saveUserPlaylists(updatedPlaylists)
-                                    if (!saved) {
-                                        console.error(
-                                            'Failed to save updated playlists when removing track',
-                                        )
-                                        return
-                                    }
-
-                                    playlists = updatedPlaylists
-                                    activePlaylistId = activePlaylist.id
-                                    window.playlistViewState = { activePlaylistId }
-                                    render()
-                                })
-                            })
-
-                            const indexPlayButtons = body.querySelectorAll(
-                                '.playlistTrackIndexPlayBtn',
-                            )
-                            indexPlayButtons.forEach((button) => {
-                                button.addEventListener('click', (event) => {
-                                    event.stopPropagation()
-                                    event.preventDefault()
-
-                                    const trackIndex = getDataAttributeIndex(
-                                        button,
-                                        'data-track-index',
-                                    )
-                                    const activePlaylist = getActivePlaylist()
-                                    if (!activePlaylist || trackIndex === null) {
-                                        return
-                                    }
-
-                                    const queueFilePaths = Array.isArray(activePlaylist.tracks)
-                                        ? activePlaylist.tracks
-                                              .slice(trackIndex)
-                                              .map((track) => track?.filePath)
-                                              .filter(Boolean)
-                                        : []
-
-                                    if (!queueFilePaths.length) {
-                                        return
-                                    }
-
-                                    audioService.startPlaylist(queueFilePaths)
-                                })
-                            })
+                            attachTrackActionHandlers(body)
                         }
                     })
                 }
@@ -556,73 +550,7 @@ export function initializePlaylistPage() {
             indexAttribute: 'data-track-index',
         })
 
-        const removeButtons = body.querySelectorAll('.removeTrackBtn')
-        removeButtons.forEach((button) => {
-            button.addEventListener('click', async (event) => {
-                event.stopPropagation()
-                event.preventDefault()
-
-                const trackIndex = getDataAttributeIndex(button, 'data-track-index')
-                const activePlaylist = getActivePlaylist()
-                if (!activePlaylist || trackIndex === null) {
-                    return
-                }
-
-                const nextTracks = Array.isArray(activePlaylist.tracks)
-                    ? activePlaylist.tracks.filter((_, index) => index !== trackIndex)
-                    : []
-
-                const updatedPlaylists = playlists.map((playlist) => {
-                    if (playlist.id !== activePlaylist.id) {
-                        return playlist
-                    }
-
-                    return {
-                        ...playlist,
-                        tracks: nextTracks,
-                        updatedAt: new Date().toISOString(),
-                    }
-                })
-
-                const saved = await sessionService.saveUserPlaylists(updatedPlaylists)
-                if (!saved) {
-                    console.error('Failed to save updated playlists when removing track')
-                    return
-                }
-
-                playlists = updatedPlaylists
-                activePlaylistId = activePlaylist.id
-                window.playlistViewState = { activePlaylistId }
-                render()
-            })
-        })
-
-        const indexPlayButtons = body.querySelectorAll('.playlistTrackIndexPlayBtn')
-        indexPlayButtons.forEach((button) => {
-            button.addEventListener('click', (event) => {
-                event.stopPropagation()
-                event.preventDefault()
-
-                const trackIndex = getDataAttributeIndex(button, 'data-track-index')
-                const activePlaylist = getActivePlaylist()
-                if (!activePlaylist || trackIndex === null) {
-                    return
-                }
-
-                const queueFilePaths = Array.isArray(activePlaylist.tracks)
-                    ? activePlaylist.tracks
-                          .slice(trackIndex)
-                          .map((track) => track?.filePath)
-                          .filter(Boolean)
-                    : []
-
-                if (!queueFilePaths.length) {
-                    return
-                }
-
-                audioService.startPlaylist(queueFilePaths)
-            })
-        })
+        attachTrackActionHandlers(body)
     }
 
     function renderHeader(activePlaylist) {
@@ -738,6 +666,7 @@ export function initializePlaylistPage() {
         if (virtualizer) {
             if (virtualizerScrollHandler) {
                 window.removeEventListener('scroll', virtualizerScrollHandler)
+                window.removeEventListener('resize', virtualizerScrollHandler)
                 virtualizerScrollHandler = null
             }
             if (scrollRaf) {

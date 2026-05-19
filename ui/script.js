@@ -1,3 +1,5 @@
+// browser environment entry point - responsible for initializing the UI, managing routing, and syncing state with the player
+
 import { playerState } from './state/player-state.js'
 import { sessionService } from './services/session-service.js'
 import { audioService } from './services/audio-service.js'

@@ -16,6 +16,7 @@ export function initializeQueuePage() {
     const placeholderCover = audioService?.placeholderCover || './assets/music-placeholder.png'
     let lastRenderKey = ''
     let renderToken = 0
+    let alive = true
 
     function getRenderKey(snapshot) {
         const playlist = Array.isArray(snapshot?.playlist) ? snapshot.playlist : []
@@ -93,7 +94,7 @@ export function initializeQueuePage() {
             }
 
             const metadata = await audioService.resolveTrackMetadata(filePath)
-            if (token !== renderToken) {
+            if (!alive || token !== renderToken) {
                 return
             }
 
@@ -199,6 +200,7 @@ export function initializeQueuePage() {
     })
 
     const cleanup = () => {
+        alive = false
         if (typeof unsubscribe === 'function') {
             unsubscribe()
         }
