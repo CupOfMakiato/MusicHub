@@ -54,20 +54,19 @@ export function setMessage(message) {
 export function initializeLoadingScreen() {
     ensureOverlayElements()
 
+    let hideTimeout = null
+
     window.loader = {
         setMessage(text) {
-            const ensured = ensureOverlayElements()
-            const message = ensured?.message
-
-            if (!message) {
-                console.warn('Loading message element not found')
-                return
-            }
-
-            message.textContent = text
+            setMessage(text)
         },
 
         show(text = 'Loading...') {
+            if (hideTimeout) {
+                clearTimeout(hideTimeout)
+                hideTimeout = null
+            }
+
             const ensured = ensureOverlayElements()
             const overlay = ensured?.overlay
 
@@ -89,12 +88,13 @@ export function initializeLoadingScreen() {
 
             overlay.classList.add('fade-out')
 
-            setTimeout(() => {
+            hideTimeout = setTimeout(() => {
                 overlay.style.display = 'none'
 
                 if (app) {
                     app.style.display = 'block'
                 }
+                hideTimeout = null
             }, minDuration)
         },
     }
