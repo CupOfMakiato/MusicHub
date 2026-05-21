@@ -157,6 +157,10 @@ const createWindow = () => {
     })
     postConfigure(win)
 }
+// Watch for changes to index.html and trigger re-render in renderer process
+app.on('re-render', () => {
+    app.loadFile('ui/index.html')
+})
 
 app.whenReady()
     .then(async () => {
