@@ -1,5 +1,7 @@
 # Blueberry Music Player
 
+[![Release](https://github.com/CupOfMakiato/MusicHub/actions/workflows/release.yml/badge.svg?branch=main)](https://github.com/CupOfMakiato/MusicHub/actions/workflows/release.yml)
+
 Blueberry Music Player is a desktop music player built with Electron and vanilla JavaScript. It focuses on local playback, playlist management, and a simple offline-first listening experience.
 
 ## Tech Stack
@@ -94,6 +96,6 @@ Electron apps include Chromium and Node.js, so installer size can be larger than
 - Better responsive layout and accessibility.
 - Further package-size optimization.
 
-## License
+## Desktop Build
 
-ISC
+You can directly access to the Release tab in this same repo to download and use the app
