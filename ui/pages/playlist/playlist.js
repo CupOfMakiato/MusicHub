@@ -53,6 +53,7 @@ export function initializePlaylistPage() {
     let cleanupTrackMenuToggles = null
     let virtualizer = null
     let virtualizerScrollHandler = null
+    let attachedAppScrollElement = null
     let scrollRaf = null
     let sortableInstance = null
     let isSavingPlaylistOrder = false
@@ -429,7 +430,8 @@ export function initializePlaylistPage() {
                         if (ap) renderTracks(ap)
                     })
                 }
-                getAppScrollElement().addEventListener('scroll', virtualizerScrollHandler, {
+                attachedAppScrollElement = getAppScrollElement()
+                attachedAppScrollElement.addEventListener('scroll', virtualizerScrollHandler, {
                     passive: true,
                 })
                 window.addEventListener('resize', virtualizerScrollHandler, { passive: true })
@@ -574,7 +576,8 @@ export function initializePlaylistPage() {
                     })
                 }
 
-                getAppScrollElement().addEventListener('scroll', virtualizerScrollHandler, {
+                attachedAppScrollElement = getAppScrollElement()
+                attachedAppScrollElement.addEventListener('scroll', virtualizerScrollHandler, {
                     passive: true,
                 })
                 window.addEventListener('resize', virtualizerScrollHandler, { passive: true })
@@ -775,9 +778,10 @@ export function initializePlaylistPage() {
         }
         if (virtualizer) {
             if (virtualizerScrollHandler) {
-                getAppScrollElement().removeEventListener('scroll', virtualizerScrollHandler)
+                attachedAppScrollElement?.removeEventListener('scroll', virtualizerScrollHandler)
                 window.removeEventListener('resize', virtualizerScrollHandler)
                 virtualizerScrollHandler = null
+                attachedAppScrollElement = null
             }
             if (scrollRaf) {
                 cancelAnimationFrame(scrollRaf)
