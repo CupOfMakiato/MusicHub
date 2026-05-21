@@ -1,5 +1,5 @@
 import {
-    escapeHtml,
+    CreateElementBuilder,
     bindImageFallbacks,
     placeFloatingElement,
     bindGlobalDismissEvents,
@@ -34,8 +34,14 @@ export function initializeLibraryPage() {
 
         contextMenu = document.createElement('div')
         contextMenu.className = 'libraryContextMenu'
-        contextMenu.innerHTML =
-            '<button type="button" class="deletePlaylistMenuBtn" role="menuitem">Delete Playlist</button>'
+        contextMenu.replaceChildren(
+            CreateElementBuilder.create('button')
+                .property('type', 'button')
+                .className('deletePlaylistMenuBtn')
+                .attr('role', 'menuitem')
+                .text('Delete Playlist')
+                .build(),
+        )
 
         contextMenu.addEventListener('click', async (event) => {
             event.stopPropagation()
@@ -111,35 +117,67 @@ export function initializeLibraryPage() {
         scrollCapture: true,
     })
 
+    function createEmptyState() {
+        return CreateElementBuilder.create('p')
+            .className('libraryEmpty')
+            .text('No playlists yet. Use Recent Music -> Create New Playlist.')
+            .build()
+    }
+
+    function createPlaylistCard(playlist) {
+        const banner = resolvePlaylistImage(playlist)
+        const trackCount = Array.isArray(playlist.tracks) ? playlist.tracks.length : 0
+        const canPlay = trackCount > 0
+
+        return CreateElementBuilder.create('article')
+            .className('libraryPlaylistCard')
+            .attr('data-playlist-id', playlist.id)
+            .attr('role', 'button')
+            .attr('tabindex', '0')
+            .attr('aria-label', `Open playlist ${playlist.name}`)
+            .child(
+                CreateElementBuilder.create('img')
+                    .property('src', banner)
+                    .property('alt', playlist.name),
+            )
+            .child(
+                CreateElementBuilder.create('div')
+                    .className('libraryPlaylistContent')
+                    .child(CreateElementBuilder.create('h3').text(playlist.name))
+                    .child(CreateElementBuilder.create('p').text(`${trackCount} songs`))
+                    .child(
+                        CreateElementBuilder.create('div')
+                            .className('libraryPlaylistActions')
+                            .child(
+                                CreateElementBuilder.create('button')
+                                    .property('type', 'button')
+                                    .property('disabled', !canPlay)
+                                    .className('playPlaylistBtn')
+                                    .attr('aria-label', 'Play playlist')
+                                    .child(
+                                        CreateElementBuilder.create('i').attr(
+                                            'data-lucide',
+                                            'play',
+                                        ),
+                                    ),
+                            ),
+                    ),
+            )
+            .build()
+    }
+
     async function render() {
         const playlists = await sessionService.loadUserPlaylists()
         if (!Array.isArray(playlists) || playlists.length === 0) {
-            container.innerHTML =
-                '<p class="libraryEmpty">No playlists yet. Use Recent Music -> Create New Playlist.</p>'
+            container.replaceChildren(createEmptyState())
             return
         }
 
-        container.innerHTML = playlists
-            .map((playlist) => {
-                const banner = resolvePlaylistImage(playlist)
-                const trackCount = Array.isArray(playlist.tracks) ? playlist.tracks.length : 0
-                const canPlay = trackCount > 0
-                return `
-                <article class="libraryPlaylistCard" data-playlist-id="${escapeHtml(playlist.id)}" role="button" tabindex="0" aria-label="Open playlist ${escapeHtml(playlist.name)}">
-                    <img src="${escapeHtml(banner)}" alt="${escapeHtml(playlist.name)}">
-                    <div class="libraryPlaylistContent">
-                        <h3>${escapeHtml(playlist.name)}</h3>
-                        <p>${trackCount} songs</p>
-                        <div class="libraryPlaylistActions">
-                            <button type="button" class="playPlaylistBtn" ${canPlay ? '' : 'disabled'} aria-label="Play playlist">
-                                <i data-lucide="play"></i>
-                            </button>
-                        </div>
-                    </div>
-                </article>
-            `
-            })
-            .join('')
+        const fragment = document.createDocumentFragment()
+        playlists.forEach((playlist) => {
+            fragment.appendChild(createPlaylistCard(playlist))
+        })
+        container.replaceChildren(fragment)
 
         bindImageFallbacks({
             scope: container,

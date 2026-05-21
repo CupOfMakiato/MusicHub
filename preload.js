@@ -4,6 +4,7 @@ const { contextBridge, ipcRenderer, shell } = require('electron')
 
 contextBridge.exposeInMainWorld('electronAPI', {
     selectAudioFile: () => ipcRenderer.invoke('dialog:openAudioFile'),
+    selectImageFile: () => ipcRenderer.invoke('dialog:openImageFile'),
     openFolder: () => ipcRenderer.invoke('dialog:openFolder'),
     getAudioFilesInFolder: (folderPath) => ipcRenderer.invoke('folder:getAudioFiles', folderPath),
     readAudioFile: (filePath, maxBytes) =>

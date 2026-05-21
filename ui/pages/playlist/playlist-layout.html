@@ -2,13 +2,23 @@
     <header class="playlistHeader">
         <!-- <div class="playlistHeaderBanner" id="playlistHeaderBanner"></div> -->
         <div class="playlistHeaderBody">
-            <img
-                id="playlistImage"
-                class="playlistImage"
-                src="./assets/music-placeholder.png"
-                alt="Playlist image"
-                draggable="false"
-            />
+            <button
+                id="playlistImageEditBtn"
+                class="playlistImageButton"
+                type="button"
+                aria-label="Edit playlist image"
+            >
+                <img
+                    id="playlistImage"
+                    class="playlistImage"
+                    src="./assets/music-placeholder.png"
+                    alt="Playlist image"
+                    draggable="false"
+                />
+                <span class="playlistImageEditIcon" aria-hidden="true">
+                    <i data-lucide="pencil-line"></i>
+                </span>
+            </button>
             <div class="playlistMeta">
                 <p class="playlistMetaLabel">Playlist</p>
                 <h2 id="playlistTitle">No playlist selected</h2>
@@ -23,6 +33,12 @@
     <section class="playlistControls">
         <button id="playlistPlayBtn" type="button" aria-label="Play playlist">
             <i data-lucide="play"></i>
+        </button>
+        <button id="playlistShuffleBtn" type="button" aria-label="Shuffle playlist">
+            <i data-lucide="shuffle"></i>
+        </button>
+        <button id="playlistAdvanceOptionsBtn" type="button" aria-label="Advance options">
+            <i data-lucide="ellipsis"></i>
         </button>
     </section>
 

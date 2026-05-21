@@ -6,6 +6,75 @@ export function escapeHtml(text) {
     return div.innerHTML
 }
 
+export class CreateElementBuilder {
+    constructor(tagName) {
+        this.element = document.createElement(tagName)
+    }
+
+    static create(tagName) {
+        return new CreateElementBuilder(tagName)
+    }
+
+    className(value) {
+        this.element.className = String(value ?? '')
+        return this
+    }
+
+    addClass(...values) {
+        values.filter(Boolean).forEach((value) => {
+            this.element.classList.add(String(value))
+        })
+        return this
+    }
+
+    attr(name, value) {
+        if (value !== undefined && value !== null) {
+            this.element.setAttribute(name, String(value))
+        }
+        return this
+    }
+
+    property(name, value) {
+        this.element[name] = value
+        return this
+    }
+
+    text(value) {
+        this.element.textContent = String(value ?? '')
+        return this
+    }
+
+    child(childNode) {
+        if (childNode instanceof CreateElementBuilder) {
+            this.element.appendChild(childNode.build())
+            return this
+        }
+
+        if (childNode instanceof Node) {
+            this.element.appendChild(childNode)
+        }
+        return this
+    }
+
+    children(...childNodes) {
+        childNodes.forEach((childNode) => {
+            this.child(childNode)
+        })
+        return this
+    }
+
+    on(eventName, handler, options) {
+        if (eventName && typeof handler === 'function') {
+            this.element.addEventListener(eventName, handler, options)
+        }
+        return this
+    }
+
+    build() {
+        return this.element
+    }
+}
+
 export function getOrCreateModalHost({ scope, hostClass = 'recentMusicModalHost' }) {
     if (!scope || !hostClass) {
         return null
@@ -357,6 +426,7 @@ export function bindImageFallbacks({
 }
 
 export const domHelpers = {
+    CreateElementBuilder,
     escapeHtml,
     getOrCreateModalHost,
     closeModalHost,

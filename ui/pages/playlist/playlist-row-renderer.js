@@ -89,6 +89,7 @@ export function renderTrackRow({ index, track, duration, rowHeight } = {}) {
     moreBtn.setAttribute('data-track-index', String(index))
     moreBtn.setAttribute('aria-label', 'Track actions')
     const moreIcon = document.createElement('i')
+    // option icon
     moreIcon.setAttribute('data-lucide', 'ellipsis')
     moreBtn.appendChild(moreIcon)
     const menuDiv = document.createElement('div')

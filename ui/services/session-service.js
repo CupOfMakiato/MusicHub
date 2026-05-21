@@ -7,6 +7,7 @@ export const sessionService = (() => {
     const MAX_RECENT_FOLDER_PLAYLISTS = 8
     const MAX_RECENT_FOLDER_TRACKS = 300
     const USER_PLAYLISTS_KEY = 'musichub:user-playlists'
+    //storing data under C:\Users\<user>\AppData\Roaming\Blueberry Music Player\
     const RECENT_FOLDER_PLAYLISTS_KEY = 'musichub:recent-folder-playlists'
 
     function normalizeRecentFolderPlaylistTracks(tracks) {

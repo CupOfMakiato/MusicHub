@@ -1,5 +1,5 @@
 :root {
-  --font-base: "Rubik", sans-serif;
+    --font-base: 'Rubik', sans-serif;
 }
 
 #coverImage {
@@ -9,6 +9,20 @@
     border-radius: 8px;
 }
 
-html, body {
-  font-family: var(--font-base);
+html,
+body {
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    font-family: var(--font-base);
+}
+
+#app-scroll {
+    position: fixed;
+    inset: 0 0 var(--bottom-player-height, 92px) 0;
+    box-sizing: border-box;
+    padding: 8px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
 }

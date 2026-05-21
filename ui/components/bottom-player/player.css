@@ -2,10 +2,6 @@
     --bottom-player-height: 92px;
 }
 
-body {
-    padding-bottom: calc(var(--bottom-player-height) + 12px);
-}
-
 #bottom-player {
     position: fixed;
     left: 0;

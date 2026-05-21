@@ -30,19 +30,21 @@
         <div id="loadingOverlay"></div>
         <!-- <h1>first start of BlueberryPlayer</h1> -->
 
-        <div id="sidebar"></div>
-        <div id="recent-music"></div>
-        <img
-            id="coverImage"
-            src="./assets/music-placeholder.png"
-            alt="Album cover"
-            draggable="false"
-        />
-        <h2 id="trackTitle">No track selected</h2>
-        <p id="trackArtist">Select a file to start playing</p>
+        <main id="app-scroll">
+            <div id="sidebar"></div>
+            <div id="recent-music"></div>
+            <img
+                id="coverImage"
+                src="./assets/music-placeholder.png"
+                alt="Album cover"
+                draggable="false"
+            />
+            <h2 id="trackTitle">No track selected</h2>
+            <p id="trackArtist">Select a file to start playing</p>
 
-        <button id="selectFile">Select File</button>
-        <button id="selectFolder">Select Folder</button>
+            <button id="selectFile">Select File</button>
+            <button id="selectFolder">Select Folder</button>
+        </main>
         <div id="bottom-player"></div>
         <script type="module" src="./script.js"></script>
     </body>

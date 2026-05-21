@@ -238,6 +238,24 @@ ipcMain.handle('dialog:openAudioFile', async () => {
     return result.filePaths[0]
 })
 
+ipcMain.handle('dialog:openImageFile', async () => {
+    const result = await dialog.showOpenDialog({
+        properties: ['openFile'],
+        filters: [
+            {
+                name: 'Image Files',
+                extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'],
+            },
+        ],
+    })
+
+    if (result.canceled || result.filePaths.length === 0) {
+        return null
+    }
+
+    return result.filePaths[0]
+})
+
 ipcMain.handle('dialog:openFolder', async () => {
     const result = await dialog.showOpenDialog({
         properties: ['openDirectory'],
