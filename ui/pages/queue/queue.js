@@ -1,6 +1,10 @@
 import { playerState } from '../../state/player-state.js'
 import { audioService } from '../../services/audio-service.js'
-import { escapeHtml, bindImageFallbacks, getDataAttributeIndex } from '../../utils/dom-helpers.js'
+import {
+    CreateElementBuilder,
+    bindImageFallbacks,
+    getDataAttributeIndex,
+} from '../../utils/dom-helpers.js'
 import { DEFAULT_TRACK_TITLE, DEFAULT_TRACK_ARTIST } from '../../utils/track-record.js'
 
 export function initializeQueuePage() {
@@ -31,24 +35,47 @@ export function initializeQueuePage() {
         })
     }
 
+    function createQueueHint(message) {
+        return CreateElementBuilder.create('li').className('queueHint').text(message).build()
+    }
+
     function renderQueueItem({ trackIndex, title, artist, image, isActive }) {
-        return `
-			<li class="queueItem ${isActive ? 'isActive' : ''}" data-track-index="${trackIndex}">
-				<button type="button" class="queueItemButton" data-track-index="${trackIndex}" aria-label="Play ${escapeHtml(title)}">
-					<img
-						class="queueCover"
-						src="${escapeHtml(image || placeholderCover)}"
-						alt="${escapeHtml(title)}"
-						loading="lazy"
-						draggable="false"
-					/>
-					<span class="queueInfo">
-                        <span class="queueTitle">${escapeHtml(title || DEFAULT_TRACK_TITLE)}</span>
-                        <span class="queueArtist">${escapeHtml(artist || DEFAULT_TRACK_ARTIST)}</span>
-					</span>
-				</button>
-			</li>
-		`
+        const displayTitle = title || DEFAULT_TRACK_TITLE
+        const displayArtist = artist || DEFAULT_TRACK_ARTIST
+
+        return CreateElementBuilder.create('li')
+            .addClass('queueItem', isActive ? 'isActive' : '')
+            .attr('data-track-index', trackIndex)
+            .child(
+                CreateElementBuilder.create('button')
+                    .className('queueItemButton')
+                    .property('type', 'button')
+                    .attr('data-track-index', trackIndex)
+                    .attr('aria-label', `Play ${displayTitle}`)
+                    .child(
+                        CreateElementBuilder.create('img')
+                            .className('queueCover')
+                            .property('src', image || placeholderCover)
+                            .property('alt', displayTitle)
+                            .property('loading', 'lazy')
+                            .property('draggable', false),
+                    )
+                    .child(
+                        CreateElementBuilder.create('span')
+                            .className('queueInfo')
+                            .child(
+                                CreateElementBuilder.create('span')
+                                    .className('queueTitle')
+                                    .text(displayTitle),
+                            )
+                            .child(
+                                CreateElementBuilder.create('span')
+                                    .className('queueArtist')
+                                    .text(displayArtist),
+                            ),
+                    ),
+            )
+            .build()
     }
 
     function attachPlayHandlers(scopeElement) {
@@ -121,8 +148,8 @@ export function initializeQueuePage() {
         emptyState.hidden = hasQueue
 
         if (!hasQueue) {
-            nowPlayingList.innerHTML = ''
-            upcomingList.innerHTML = ''
+            nowPlayingList.replaceChildren()
+            upcomingList.replaceChildren()
             nextTitle.textContent = 'Next up'
             return
         }
@@ -149,34 +176,38 @@ export function initializeQueuePage() {
                     ? currentTrack.image || metadata.image
                     : metadata.image
 
-            nowPlayingList.innerHTML = renderQueueItem({
-                trackIndex: currentTrackIndex,
-                title: nowPlayingTitle,
-                artist: nowPlayingArtist,
-                image: nowPlayingImage,
-                isActive: true,
-            })
+            nowPlayingList.replaceChildren(
+                renderQueueItem({
+                    trackIndex: currentTrackIndex,
+                    title: nowPlayingTitle,
+                    artist: nowPlayingArtist,
+                    image: nowPlayingImage,
+                    isActive: true,
+                }),
+            )
         } else {
-            nowPlayingList.innerHTML = '<li class="queueHint">No track is currently selected.</li>'
+            nowPlayingList.replaceChildren(createQueueHint('No track is currently selected.'))
         }
 
         if (upcoming.length === 0) {
-            upcomingList.innerHTML = '<li class="queueHint">No upcoming tracks.</li>'
+            upcomingList.replaceChildren(createQueueHint('No upcoming tracks.'))
             nextTitle.textContent = 'Next up'
         } else {
-            nextTitle.textContent = `Next from: ${upcoming.length} track${upcoming.length > 1 ? 's' : ''}`
-            upcomingList.innerHTML = upcoming
-                .map(({ filePath, index }) => {
-                    const metadata = audioService.getTrackDisplayData(filePath)
-                    return renderQueueItem({
+            nextTitle.textContent = `Next up`
+            const upcomingFragment = document.createDocumentFragment()
+            upcoming.forEach(({ filePath, index }) => {
+                const metadata = audioService.getTrackDisplayData(filePath)
+                upcomingFragment.appendChild(
+                    renderQueueItem({
                         trackIndex: index,
                         title: metadata.title,
                         artist: metadata.artist,
                         image: metadata.image,
                         isActive: false,
-                    })
-                })
-                .join('')
+                    }),
+                )
+            })
+            upcomingList.replaceChildren(upcomingFragment)
         }
 
         attachPlayHandlers(nowPlayingList)

@@ -26,6 +26,7 @@ export function initializePlaylistPage() {
     const trackCountElement = document.getElementById('playlistTrackCount')
     const durationElement = document.getElementById('playlistDuration')
     const image = document.getElementById('playlistImage')
+    const imageEditButton = document.getElementById('playlistImageEditBtn')
     const body = document.getElementById('playlistTrackBody')
     const playButton = document.getElementById('playlistPlayBtn')
     const trackContainer = document.getElementById('playlistTrackContainer')
@@ -35,6 +36,7 @@ export function initializePlaylistPage() {
         !trackCountElement ||
         !durationElement ||
         !image ||
+        !imageEditButton ||
         !body ||
         !playButton ||
         !trackContainer
@@ -51,9 +53,46 @@ export function initializePlaylistPage() {
     let cleanupTrackMenuToggles = null
     let virtualizer = null
     let virtualizerScrollHandler = null
+    let attachedAppScrollElement = null
     let scrollRaf = null
     let sortableInstance = null
     let isSavingPlaylistOrder = false
+    let isSavingPlaylistImage = false
+
+    function getAppScrollElement() {
+        return window.appScrollElement || document.getElementById('app-scroll') || window
+    }
+
+    function getAppScrollTop() {
+        const scrollElement = getAppScrollElement()
+        if (scrollElement === window) {
+            return (document.scrollingElement || document.documentElement).scrollTop
+        }
+
+        return scrollElement.scrollTop
+    }
+
+    function getAppViewportHeight() {
+        const scrollElement = getAppScrollElement()
+        if (scrollElement === window) {
+            return window.innerHeight || document.documentElement.clientHeight
+        }
+
+        return scrollElement.clientHeight
+    }
+
+    function getElementTopWithinAppScroll(element) {
+        const scrollElement = getAppScrollElement()
+        const scrollTop = getAppScrollTop()
+        const elementRect = element.getBoundingClientRect()
+
+        if (scrollElement === window) {
+            return elementRect.top + scrollTop
+        }
+
+        const scrollRect = scrollElement.getBoundingClientRect()
+        return elementRect.top - scrollRect.top + scrollTop
+    }
 
     function renderPlayButtonIcon() {
         const existingIcon = playButton.querySelector('i')
@@ -378,8 +417,7 @@ export function initializePlaylistPage() {
             if (!virtualizer) {
                 virtualizer = createVirtualizer({
                     count: tracks.length,
-                    // use the page scrollbar as the scroll element so the app scrollbar controls the list
-                    getScrollElement: () => document.scrollingElement || document.documentElement,
+                    getScrollElement: getAppScrollElement,
                     estimateSize: () => 56,
                     overscan: 10,
                 })
@@ -392,7 +430,10 @@ export function initializePlaylistPage() {
                         if (ap) renderTracks(ap)
                     })
                 }
-                window.addEventListener('scroll', virtualizerScrollHandler, { passive: true })
+                attachedAppScrollElement = getAppScrollElement()
+                attachedAppScrollElement.addEventListener('scroll', virtualizerScrollHandler, {
+                    passive: true,
+                })
                 window.addEventListener('resize', virtualizerScrollHandler, { passive: true })
             } else if (typeof virtualizer.setOptions === 'function') {
                 virtualizer.setOptions({
@@ -424,12 +465,16 @@ export function initializePlaylistPage() {
                 const track = tracks[index]
                 const normalizedTrack = normalizeTrackRecord(track)
                 const duration =
-                    typeof normalizedTrack?.duration === 'number' &&
-                    normalizedTrack.duration > 0
+                    typeof normalizedTrack?.duration === 'number' && normalizedTrack.duration > 0
                         ? normalizedTrack.duration
                         : durationCache.get(normalizedTrack?.filePath)
 
-                const rowNode = renderTrackRow({ index, track, duration, rowHeight: virtualItem.size })
+                const rowNode = renderTrackRow({
+                    index,
+                    track,
+                    duration,
+                    rowHeight: virtualItem.size,
+                })
                 fragment.appendChild(rowNode)
             })
 
@@ -453,15 +498,15 @@ export function initializePlaylistPage() {
             let lastEnd = -1
 
             function computeVirtualRange() {
-                const scrollTop = (document.scrollingElement || document.documentElement).scrollTop
-                const viewportHeight = window.innerHeight || document.documentElement.clientHeight
-                const containerRect = trackContainer.getBoundingClientRect()
-                const containerTop = containerRect.top + scrollTop
+                const scrollTop = getAppScrollTop()
+                const viewportHeight = getAppViewportHeight()
+                const containerTop = getElementTopWithinAppScroll(trackContainer)
                 const headerHeight = thead ? thead.getBoundingClientRect().height : 0
                 const contentStart = containerTop + headerHeight
 
                 let start = Math.floor((scrollTop - contentStart) / ROW_ESTIMATE) - OVERSCAN
-                let end = Math.ceil((scrollTop - contentStart + viewportHeight) / ROW_ESTIMATE) + OVERSCAN
+                let end =
+                    Math.ceil((scrollTop - contentStart + viewportHeight) / ROW_ESTIMATE) + OVERSCAN
 
                 if (start < 0) start = 0
                 if (end < 0) end = 0
@@ -531,7 +576,10 @@ export function initializePlaylistPage() {
                     })
                 }
 
-                window.addEventListener('scroll', virtualizerScrollHandler, { passive: true })
+                attachedAppScrollElement = getAppScrollElement()
+                attachedAppScrollElement.addEventListener('scroll', virtualizerScrollHandler, {
+                    passive: true,
+                })
                 window.addEventListener('resize', virtualizerScrollHandler, { passive: true })
             }
         }
@@ -563,8 +611,10 @@ export function initializePlaylistPage() {
             title.textContent = 'No playlist selected'
             trackCountElement.textContent = 'Choose a playlist from your library.'
             durationElement.textContent = ''
+            imageEditButton.disabled = true
             bindImageFallback(image)
             image.src = './assets/music-placeholder.png'
+            window.lucide?.createIcons({ nodes: [imageEditButton] })
             return
         }
 
@@ -572,9 +622,11 @@ export function initializePlaylistPage() {
         title.textContent = activePlaylist.name || 'Untitled Playlist'
         const trackCount = activePlaylist.tracks?.length || 0
         trackCountElement.textContent = `${trackCount} ${trackCount === 1 ? 'song' : 'songs'}`
+        imageEditButton.disabled = false
 
         bindImageFallback(image)
         image.src = playlistImage
+        window.lucide?.createIcons({ nodes: [imageEditButton] })
     }
 
     function render() {
@@ -655,8 +707,52 @@ export function initializePlaylistPage() {
         audioService.startPlaylist(filePaths)
     })
 
+    imageEditButton.addEventListener('click', async () => {
+        const activePlaylist = getActivePlaylist()
+        if (!activePlaylist || typeof window.electronAPI?.selectImageFile !== 'function') {
+            return
+        }
+
+        try {
+            const selectedImagePath = await window.electronAPI.selectImageFile()
+            const banner = toFileUrl(selectedImagePath)
+            if (!banner) {
+                return
+            }
+
+            const now = new Date().toISOString()
+            const updatedPlaylists = playlists.map((playlist) => {
+                if (playlist.id !== activePlaylist.id) {
+                    return playlist
+                }
+
+                return {
+                    ...playlist,
+                    banner,
+                    updatedAt: now,
+                }
+            })
+
+            isSavingPlaylistImage = true
+            const saved = await sessionService.saveUserPlaylists(updatedPlaylists)
+            if (!saved) {
+                console.error('Failed to save playlist image')
+                return
+            }
+
+            playlists = updatedPlaylists
+            activePlaylistId = activePlaylist.id
+            window.playlistViewState = { activePlaylistId }
+            render()
+        } catch (error) {
+            console.error('Failed to update playlist image', error)
+        } finally {
+            isSavingPlaylistImage = false
+        }
+    })
+
     const onPlaylistsUpdated = () => {
-        if (isSavingPlaylistOrder) return
+        if (isSavingPlaylistOrder || isSavingPlaylistImage) return
         if (isRouteActive(['playlist', 'queue'])) {
             hydrate()
         }
@@ -682,9 +778,10 @@ export function initializePlaylistPage() {
         }
         if (virtualizer) {
             if (virtualizerScrollHandler) {
-                window.removeEventListener('scroll', virtualizerScrollHandler)
+                attachedAppScrollElement?.removeEventListener('scroll', virtualizerScrollHandler)
                 window.removeEventListener('resize', virtualizerScrollHandler)
                 virtualizerScrollHandler = null
+                attachedAppScrollElement = null
             }
             if (scrollRaf) {
                 cancelAnimationFrame(scrollRaf)
