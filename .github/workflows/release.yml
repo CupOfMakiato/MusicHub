@@ -1,0 +1,55 @@
+on:
+    push:
+        branches:
+            - main
+    workflow_dispatch:
+
+permissions:
+    contents: write
+
+jobs:
+    build-windows:
+        runs-on: windows-latest
+
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+            - name: Setup Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: 22
+                  cache: npm
+
+            - name: Install dependencies
+              run: npm ci
+
+            - name: Build Windows installer
+              run: npm run build
+
+            - name: Upload workflow artifact
+              uses: actions/upload-artifact@v4
+              with:
+                  name: Blueberry-Music-Player
+                  path: |
+                      dist/*.exe
+                      dist/*.blockmap
+                      dist/*.yml
+                      dist/*.yaml
+
+            - name: Create or update rolling GitHub Release
+              uses: ncipollo/release-action@v1
+              with:
+                  tag: main-latest
+                  name: Main Latest Build
+                  commit: main
+                  artifacts: |
+                      dist/*.exe
+                      dist/*.blockmap
+                      dist/*.yml
+                      dist/*.yaml
+                  allowUpdates: true
+                  removeArtifacts: true
+                  replacesArtifacts: true
+                  prerelease: true
+                  makeLatest: false
