@@ -65,6 +65,7 @@ export function initializePlaylistPage() {
     let paddingTopRow = null
     let paddingBottomRow = null
     let durationCellsRaf = null
+    let pendingDurationCellsRunId = null
     const pendingDurationCellIndexes = new Set()
     const virtualRowCache = new Map()
 
@@ -275,7 +276,7 @@ export function initializePlaylistPage() {
             concurrency: 8,
             onResolved: (resolvedTrack) => {
                 if (runId === totalDurationRunId) {
-                    scheduleDurationCellUpdate(resolvedTrack.index)
+                    scheduleDurationCellUpdate(resolvedTrack.index, runId)
                 }
             },
         })
@@ -524,7 +525,25 @@ export function initializePlaylistPage() {
         }
     }
 
-    function scheduleDurationCellUpdate(trackIndex) {
+    function cancelPendingDurationCellUpdates() {
+        if (durationCellsRaf) {
+            cancelAnimationFrame(durationCellsRaf)
+            durationCellsRaf = null
+        }
+        pendingDurationCellsRunId = null
+        pendingDurationCellIndexes.clear()
+    }
+
+    function scheduleDurationCellUpdate(trackIndex, runId) {
+        if (runId !== totalDurationRunId) {
+            return
+        }
+
+        if (pendingDurationCellsRunId !== runId) {
+            cancelPendingDurationCellUpdates()
+            pendingDurationCellsRunId = runId
+        }
+
         if (Number.isInteger(trackIndex)) {
             pendingDurationCellIndexes.add(trackIndex)
         }
@@ -535,7 +554,13 @@ export function initializePlaylistPage() {
 
         durationCellsRaf = requestAnimationFrame(() => {
             durationCellsRaf = null
+            if (runId !== totalDurationRunId) {
+                pendingDurationCellsRunId = null
+                pendingDurationCellIndexes.clear()
+                return
+            }
             renderDurationCellUpdates(Array.from(pendingDurationCellIndexes))
+            pendingDurationCellsRunId = null
             pendingDurationCellIndexes.clear()
         })
     }
@@ -567,11 +592,7 @@ export function initializePlaylistPage() {
     }
 
     function resetVirtualRows() {
-        if (durationCellsRaf) {
-            cancelAnimationFrame(durationCellsRaf)
-            durationCellsRaf = null
-        }
-        pendingDurationCellIndexes.clear()
+        cancelPendingDurationCellUpdates()
         virtualRowCache.clear()
         paddingTopRow = null
         paddingBottomRow = null
@@ -948,6 +969,8 @@ export function initializePlaylistPage() {
     observePlaylistLayoutForScrollMargin()
 
     const cleanup = () => {
+        totalDurationRunId += 1
+        cancelPendingDurationCellUpdates()
         window.removeEventListener('user-playlists:updated', onPlaylistsUpdated)
         window.removeEventListener('resize', invalidatePlaylistScrollMargin)
         image.removeEventListener('load', invalidatePlaylistScrollMargin)
