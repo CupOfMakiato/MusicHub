@@ -133,10 +133,23 @@
     align-items: center;
     justify-content: center;
     cursor: pointer;
+    opacity: 0;
+    pointer-events: none;
+    transition:
+        opacity 140ms ease,
+        background 140ms ease;
 }
 
 .playlistTrackMoreBtn:hover {
     background: #f5f7fa;
+}
+
+.playlistTrackRow:hover .playlistTrackMoreBtn,
+.playlistTrackRow:focus-within .playlistTrackMoreBtn,
+.playlistTrackMoreBtn:focus-visible,
+.playlistTrackActions.is-menu-open .playlistTrackMoreBtn {
+    opacity: 1;
+    pointer-events: auto;
 }
 
 .playlistTrackActions {
@@ -154,13 +167,11 @@
     height: 60px;
 }
 
-.playlistTrackRow.is-menu-open,
-.playlistTrackRow:has(.playlistTrackMenu.is-open) {
+.playlistTrackRow.is-menu-open {
     z-index: 90;
 }
 
-.playlistTrackActions.is-menu-open,
-.playlistTrackActions:has(.playlistTrackMenu.is-open) {
+.playlistTrackActions.is-menu-open {
     z-index: 100;
 }
 
@@ -185,12 +196,13 @@
 }
 
 #playlistPlayBtn {
-    width: 34px;
-    height: 34px;
+    width: 40px;
+    height: 40px;
     align-items: center;
     justify-content: center;
-    border: 1px solid #d6dbe3;
-    border-radius: 8px;
+    /* border: 1px solid #d6dbe3; */
+    /* border-radius: 8px; */
+    border: none;
     background: transparent;
     color: #1f2937;
     display: inline-flex;
@@ -200,6 +212,12 @@
     line-height: 1;
     overflow: hidden;
 }
+
+#playlistPlayBtn > svg {
+    width: 24px;
+    height: 24px;
+}
+
 #playlistPlayBtn:hover {
     background: #edf2f7;
 }
@@ -280,7 +298,7 @@
 
 .playlistTrackTable td {
     height: 60px;
-    padding: 0 1px;
+    padding: 0 5px;
     border-bottom: 1px solid #edf1f5;
     text-align: center;
     font-size: 13px;
@@ -304,7 +322,6 @@
     z-index: 2;
 }
 
-.playlistTrackTable td.playlistTrackActionsCell:has(.playlistTrackMenu.is-open),
 .playlistTrackTable td.playlistTrackActionsCell.is-menu-open {
     z-index: 120;
 }

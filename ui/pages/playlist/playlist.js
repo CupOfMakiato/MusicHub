@@ -59,6 +59,7 @@ export function initializePlaylistPage() {
     let isSavingPlaylistOrder = false
     let isSavingPlaylistImage = false
     let cachedScrollMargin = null
+    let playlistLayoutResizeObserver = null
     let trackActionsDelegated = false
     let activeRenderedMode = null
     let paddingTopRow = null
@@ -113,6 +114,32 @@ export function initializePlaylistPage() {
 
         cachedScrollMargin = getElementTopWithinAppScroll(trackContainer) + headerHeight
         return cachedScrollMargin
+    }
+
+    function invalidatePlaylistScrollMargin() {
+        cachedScrollMargin = null
+        if (virtualizer) {
+            scheduleTrackRender()
+        }
+    }
+
+    function observePlaylistLayoutForScrollMargin() {
+        if (typeof ResizeObserver === 'function') {
+            playlistLayoutResizeObserver = new ResizeObserver(invalidatePlaylistScrollMargin)
+            ;[
+                document.querySelector('.playlistHeader'),
+                document.querySelector('.playlistControls'),
+                trackContainer.querySelector('thead'),
+            ].forEach((element) => {
+                if (element) {
+                    playlistLayoutResizeObserver.observe(element)
+                }
+            })
+        }
+
+        window.addEventListener('resize', invalidatePlaylistScrollMargin, { passive: true })
+        image.addEventListener('load', invalidatePlaylistScrollMargin)
+        image.addEventListener('error', invalidatePlaylistScrollMargin)
     }
 
     function scheduleTrackRender() {
@@ -402,18 +429,6 @@ export function initializePlaylistPage() {
     function initializeSortableIfNeeded() {
         if (!body) return
 
-        if (virtualizer) {
-            if (sortableInstance && typeof sortableInstance.destroy === 'function') {
-                try {
-                    sortableInstance.destroy()
-                } catch (e) {
-                    console.error('Failed to destroy Sortable before virtualized render', e)
-                }
-            }
-            sortableInstance = null
-            return
-        }
-
         if (sortableInstance) return
 
         if (typeof createPlaylistSortable !== 'function') return
@@ -698,7 +713,6 @@ export function initializePlaylistPage() {
                         count: tracks.length,
                         scrollMargin,
                     })
-                    virtualizer._willUpdate?.()
                 }
             }
 
@@ -707,15 +721,14 @@ export function initializePlaylistPage() {
             const createdRows = []
             const renderedIndexes = new Set()
 
-            const paddingTop =
-                virtualItems.length > 0 ? Math.max(0, virtualItems[0].start - scrollMargin) : 0
-            const paddingBottom =
-                virtualItems.length > 0
-                    ? Math.max(
-                          0,
-                          virtualizer.getTotalSize() - virtualItems[virtualItems.length - 1].end,
-                      )
-                    : 0
+            const firstVirtualItem = virtualItems[0]
+            const lastVirtualItem = virtualItems[virtualItems.length - 1]
+            const paddingTop = firstVirtualItem
+                ? firstVirtualItem.index * PLAYLIST_TRACK_ROW_HEIGHT
+                : 0
+            const paddingBottom = lastVirtualItem
+                ? (tracks.length - lastVirtualItem.index - 1) * PLAYLIST_TRACK_ROW_HEIGHT
+                : 0
 
             if (paddingTop > 0) {
                 paddingTopRow = ensurePaddingRow(paddingTopRow, 'virtual-padding-top', paddingTop)
@@ -932,9 +945,15 @@ export function initializePlaylistPage() {
     window.addEventListener('user-playlists:updated', onPlaylistsUpdated)
     // Attach global undo shortcut for this page (Ctrl+Z)
     attachUndoShortcut()
+    observePlaylistLayoutForScrollMargin()
 
     const cleanup = () => {
         window.removeEventListener('user-playlists:updated', onPlaylistsUpdated)
+        window.removeEventListener('resize', invalidatePlaylistScrollMargin)
+        image.removeEventListener('load', invalidatePlaylistScrollMargin)
+        image.removeEventListener('error', invalidatePlaylistScrollMargin)
+        playlistLayoutResizeObserver?.disconnect()
+        playlistLayoutResizeObserver = null
         detachUndoShortcut()
         if (sortableInstance && typeof sortableInstance.destroy === 'function') {
             try {
