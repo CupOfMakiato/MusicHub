@@ -15,6 +15,10 @@
     </div>
     <div class="playerCenter">
         <div class="playerTransport">
+            <button id="trackShuffleBtn" type="button" aria-label="Shuffle track">
+                <i data-lucide="shuffle"></i>
+            </button>
+
             <button id="prevBtn" type="button" aria-label="Previous track">
                 <i data-lucide="skip-back"></i>
             </button>
@@ -26,6 +30,10 @@
 
             <button id="nextBtn" type="button" aria-label="Next track">
                 <i data-lucide="skip-forward"></i>
+            </button>
+
+            <button id="trackRepeatBtn" type="button" aria-label="Repeat track">
+                <i data-lucide="repeat"></i>
             </button>
         </div>
 
@@ -47,5 +55,8 @@
         </button>
 
         <input type="range" id="volumeSlider" min="0" max="1" step="0.01" value="0.7" />
+        <button id="trackMenuBtn" type="button" aria-label="Track menu">
+            <i data-lucide="ellipsis"></i>
+        </button>
     </div>
 </div>

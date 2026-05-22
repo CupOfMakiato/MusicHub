@@ -2,11 +2,15 @@
 
 [![Release](https://github.com/CupOfMakiato/MusicHub/actions/workflows/release.yml/badge.svg?branch=main)](https://github.com/CupOfMakiato/MusicHub/actions/workflows/release.yml)
 
-Blueberry Music Player is a desktop music player built with Electron and vanilla JavaScript. It focuses on local playback, playlist management, and a simple offline-first listening experience.
+Blueberry Music Player is a desktop music player built with Electron and VanillaJs. Support mainly .MP3 and .WAV file extension. Serves as an alternative audio/music playlist manager instead of using Window Media Player (if you're using Window ofc). Why did I create this? Because i don't like how Window Media Player playlist works and i like how Spotify playlist so i combine them.
+
+Big drawback is i didn't know Electron is RAM-consuming and i should migrate this code to Tauri (which is a pain in the ass since they use Rust instead) 🥀
+
+Any critics are appreciated while developing this!
 
 ## Tech Stack
 
-- Electron
+- Electron (slow af)
 - Vanilla JavaScript
 - HTML and CSS
 - Howler.js for audio playback
@@ -90,11 +94,10 @@ Electron apps include Chromium and Node.js, so installer size can be larger than
 
 ## Roadmap
 
-- Audio normalization.
-- Shuffle, repeat, and play-next controls.
-- More queue management options.
-- Better responsive layout and accessibility.
-- Further package-size optimization.
+- Audio normalization (or loudness nomalization something i'm not an audio engineer).
+- More queue management options. (more controls like shuffle, loop, sort, search)
+- Better responsive layout and accessibility. (update the UI)
+- Further package-size optimization. (>300MB currently)
 
 ## Desktop Build
 
