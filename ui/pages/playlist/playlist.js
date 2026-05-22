@@ -1,11 +1,15 @@
 import {
-    attachIndexedMenuToggle,
     getDataAttributeIndex,
     bindImageFallback,
     bindImageFallbacks,
 } from '../../utils/dom-helpers.js'
 import { createPlaylistSortable } from './playlist-sortable.js'
 import { renderTrackRow } from './playlist-row-renderer.js'
+import {
+    canUsePlaylistVirtualizer,
+    createPlaylistVirtualizer,
+    loadPlaylistVirtualCore,
+} from './playlist-virtualizer.js'
 import { pushUndo, attachUndoShortcut, detachUndoShortcut } from '../../services/undo-service.js'
 //formatDate in rowrederer
 import { formatDurationClock, formatDurationVerbose } from '../../utils/duration.js'
@@ -16,10 +20,9 @@ import { sessionService } from '../../services/session-service.js'
 import { audioService } from '../../services/audio-service.js'
 import { isRouteActive } from '../../utils/route.js'
 
-const { createVirtualizer } =
-    (typeof window !== 'undefined' &&
-        (window.TanStackVirtualCore || window.tanstackVirtualCore || window.TanStackVirtual)) ||
-    {}
+const PLAYLIST_TRACK_ROW_HEIGHT = 60
+const PLAYLIST_TRACK_OVERSCAN = 12
+const PLAYLIST_VIRTUAL_ROW_CACHE_LIMIT = 240
 
 export function initializePlaylistPage() {
     const title = document.getElementById('playlistTitle')
@@ -48,16 +51,21 @@ export function initializePlaylistPage() {
     let activePlaylistId = window.playlistViewState?.activePlaylistId || null
     const durationCache = new Map()
     const durationProbePromises = new Map()
-    let durationProbeRunId = 0
     let totalDurationRunId = 0
-    let cleanupTrackMenuToggles = null
+    let cleanupTrackActions = null
     let virtualizer = null
-    let virtualizerScrollHandler = null
-    let attachedAppScrollElement = null
     let scrollRaf = null
     let sortableInstance = null
     let isSavingPlaylistOrder = false
     let isSavingPlaylistImage = false
+    let cachedScrollMargin = null
+    let trackActionsDelegated = false
+    let activeRenderedMode = null
+    let paddingTopRow = null
+    let paddingBottomRow = null
+    let durationCellsRaf = null
+    const pendingDurationCellIndexes = new Set()
+    const virtualRowCache = new Map()
 
     function getAppScrollElement() {
         return window.appScrollElement || document.getElementById('app-scroll') || window
@@ -92,6 +100,33 @@ export function initializePlaylistPage() {
 
         const scrollRect = scrollElement.getBoundingClientRect()
         return elementRect.top - scrollRect.top + scrollTop
+    }
+
+    function getPlaylistContentScrollMargin({ force = false } = {}) {
+        if (!force && cachedScrollMargin !== null) {
+            return cachedScrollMargin
+        }
+
+        const table = trackContainer.querySelector('.playlistTrackTable')
+        const thead = table?.querySelector('thead')
+        const headerHeight = thead ? thead.getBoundingClientRect().height : 0
+
+        cachedScrollMargin = getElementTopWithinAppScroll(trackContainer) + headerHeight
+        return cachedScrollMargin
+    }
+
+    function scheduleTrackRender() {
+        if (scrollRaf) {
+            return
+        }
+
+        scrollRaf = requestAnimationFrame(() => {
+            scrollRaf = null
+            const activePlaylist = getActivePlaylist()
+            if (activePlaylist) {
+                renderTracks(activePlaylist, 'virtual-change')
+            }
+        })
     }
 
     function renderPlayButtonIcon() {
@@ -171,33 +206,29 @@ export function initializePlaylistPage() {
         return probePromise
     }
 
-    async function hydrateTrackDurations(activePlaylist) {
-        const runId = ++durationProbeRunId
-        if (
-            !activePlaylist ||
-            !Array.isArray(activePlaylist.tracks) ||
-            activePlaylist.tracks.length === 0
-        ) {
-            return
+    async function resolveTrackDurationsLimited(tracks, { concurrency = 8, onResolved } = {}) {
+        if (!Array.isArray(tracks) || tracks.length === 0) {
+            return []
         }
 
-        const results = await Promise.all(
-            activePlaylist.tracks.map(async (track, index) => {
-                const duration = await resolveTrackDuration(track)
-                return { index, duration }
-            }),
-        )
+        const results = new Array(tracks.length).fill(null)
+        let nextIndex = 0
 
-        if (runId !== durationProbeRunId) {
-            return
-        }
+        const workers = Array.from({ length: Math.min(concurrency, tracks.length) }, async () => {
+            while (nextIndex < tracks.length) {
+                const index = nextIndex
+                nextIndex += 1
 
-        results.forEach(({ index, duration }) => {
-            const durationCell = body.querySelector(`td[data-duration-index="${index}"]`)
-            if (durationCell) {
-                durationCell.textContent = formatDurationClock(duration)
+                const duration = await resolveTrackDuration(tracks[index])
+                results[index] = duration
+                onResolved?.({ index, duration })
+
+                await new Promise((resolve) => setTimeout(resolve, 0))
             }
         })
+
+        await Promise.all(workers)
+        return results
     }
 
     async function renderTotalDuration(activePlaylist) {
@@ -206,15 +237,21 @@ export function initializePlaylistPage() {
             !Array.isArray(activePlaylist.tracks) ||
             activePlaylist.tracks.length === 0
         ) {
+            totalDurationRunId += 1
             durationElement.textContent = ''
             return
         }
 
         durationElement.textContent = ', ...'
         const runId = ++totalDurationRunId
-        const durations = await Promise.all(
-            activePlaylist.tracks.map((track) => resolveTrackDuration(track)),
-        )
+        const durations = await resolveTrackDurationsLimited(activePlaylist.tracks, {
+            concurrency: 8,
+            onResolved: (resolvedTrack) => {
+                if (runId === totalDurationRunId) {
+                    scheduleDurationCellUpdate(resolvedTrack.index)
+                }
+            },
+        })
 
         if (runId !== totalDurationRunId) {
             return
@@ -228,16 +265,74 @@ export function initializePlaylistPage() {
         return playlists.find((playlist) => playlist.id === activePlaylistId) || null
     }
 
-    function attachTrackActionHandlers(scopeElement) {
-        if (!scopeElement) return
+    function setActivePlaylistState(nextActivePlaylistId) {
+        activePlaylistId = nextActivePlaylistId || null
+        window.playlistViewState = { activePlaylistId }
+    }
 
-        const removeButtons = scopeElement.querySelectorAll('.removeTrackBtn')
-        removeButtons.forEach((button) => {
-            button.addEventListener('click', async (event) => {
+    async function savePlaylistsAndRender(
+        updatedPlaylists,
+        { activeId = activePlaylistId, errorMessage = 'Failed to save playlists' } = {},
+    ) {
+        const saved = await sessionService.saveUserPlaylists(updatedPlaylists)
+        if (!saved) {
+            console.error(errorMessage)
+            return false
+        }
+
+        playlists = updatedPlaylists
+        setActivePlaylistState(activeId)
+        render()
+        return true
+    }
+
+    function closeAllTrackMenus() {
+        body.querySelectorAll('.playlistTrackMenu.is-open').forEach((menu) => {
+            menu.classList.remove('is-open')
+            menu.closest('.playlistTrackActions')?.classList.remove('is-menu-open')
+            menu.closest('.playlistTrackActionsCell')?.classList.remove('is-menu-open')
+            menu.closest('.playlistTrackRow')?.classList.remove('is-menu-open')
+        })
+    }
+
+    function attachTrackActionHandlers() {
+        if (trackActionsDelegated) return
+
+        const onBodyClick = async (event) => {
+            const menuButton = event.target.closest('.playlistTrackMoreBtn')
+            if (menuButton && body.contains(menuButton)) {
                 event.stopPropagation()
                 event.preventDefault()
 
-                const trackIndex = getDataAttributeIndex(button, 'data-track-index')
+                const trackIndex = getDataAttributeIndex(menuButton, 'data-track-index')
+                if (trackIndex === null) {
+                    return
+                }
+
+                const menu = body.querySelector(
+                    `.playlistTrackMenu[data-track-index="${trackIndex}"]`,
+                )
+                if (!menu) {
+                    return
+                }
+
+                const isOpen = menu.classList.contains('is-open')
+                closeAllTrackMenus()
+                if (!isOpen) {
+                    menu.classList.add('is-open')
+                    menu.closest('.playlistTrackActions')?.classList.add('is-menu-open')
+                    menu.closest('.playlistTrackActionsCell')?.classList.add('is-menu-open')
+                    menu.closest('.playlistTrackRow')?.classList.add('is-menu-open')
+                }
+                return
+            }
+
+            const removeButton = event.target.closest('.removeTrackBtn')
+            if (removeButton && body.contains(removeButton)) {
+                event.stopPropagation()
+                event.preventDefault()
+
+                const trackIndex = getDataAttributeIndex(removeButton, 'data-track-index')
                 const activePlaylist = getActivePlaylist()
                 if (!activePlaylist || trackIndex === null) {
                     return
@@ -259,26 +354,19 @@ export function initializePlaylistPage() {
                     }
                 })
 
-                const saved = await sessionService.saveUserPlaylists(updatedPlaylists)
-                if (!saved) {
-                    console.error('Failed to save updated playlists when removing track')
-                    return
-                }
+                await savePlaylistsAndRender(updatedPlaylists, {
+                    activeId: activePlaylist.id,
+                    errorMessage: 'Failed to save updated playlists when removing track',
+                })
+                return
+            }
 
-                playlists = updatedPlaylists
-                activePlaylistId = activePlaylist.id
-                window.playlistViewState = { activePlaylistId }
-                render()
-            })
-        })
-
-        const indexPlayButtons = scopeElement.querySelectorAll('.playlistTrackIndexPlayBtn')
-        indexPlayButtons.forEach((button) => {
-            button.addEventListener('click', (event) => {
+            const playButton = event.target.closest('.playlistTrackIndexPlayBtn')
+            if (playButton && body.contains(playButton)) {
                 event.stopPropagation()
                 event.preventDefault()
 
-                const trackIndex = getDataAttributeIndex(button, 'data-track-index')
+                const trackIndex = getDataAttributeIndex(playButton, 'data-track-index')
                 const activePlaylist = getActivePlaylist()
                 if (!activePlaylist || trackIndex === null) {
                     return
@@ -291,31 +379,44 @@ export function initializePlaylistPage() {
                           .filter(Boolean)
                     : []
 
-                if (!queueFilePaths.length) {
-                    return
+                if (queueFilePaths.length) {
+                    audioService.startPlaylist(queueFilePaths)
                 }
+            }
+        }
 
-                audioService.startPlaylist(queueFilePaths)
-            })
-        })
+        const onDocumentClick = () => {
+            closeAllTrackMenus()
+        }
+
+        body.addEventListener('click', onBodyClick)
+        document.addEventListener('click', onDocumentClick)
+        cleanupTrackActions = () => {
+            body.removeEventListener('click', onBodyClick)
+            document.removeEventListener('click', onDocumentClick)
+            trackActionsDelegated = false
+        }
+        trackActionsDelegated = true
     }
 
     function initializeSortableIfNeeded() {
         if (!body) return
 
-        if (sortableInstance && typeof sortableInstance.destroy === 'function') {
-            try {
-                sortableInstance.destroy()
-            } catch (e) {
-                console.error('Failed to destroy existing Sortable instance', e)
+        if (virtualizer) {
+            if (sortableInstance && typeof sortableInstance.destroy === 'function') {
+                try {
+                    sortableInstance.destroy()
+                } catch (e) {
+                    console.error('Failed to destroy Sortable before virtualized render', e)
+                }
             }
             sortableInstance = null
+            return
         }
 
-        if (typeof createPlaylistSortable !== 'function') return
+        if (sortableInstance) return
 
-        const usingNonLocalVirtualizer = !!virtualizer && !virtualizer.local
-        if (usingNonLocalVirtualizer) return
+        if (typeof createPlaylistSortable !== 'function') return
 
         try {
             sortableInstance = createPlaylistSortable({
@@ -351,8 +452,9 @@ export function initializePlaylistPage() {
                                     }
 
                                     playlists = previousPlaylists
-                                    activePlaylistId = getActivePlaylist()?.id || activePlaylistId
-                                    window.playlistViewState = { activePlaylistId }
+                                    setActivePlaylistState(
+                                        getActivePlaylist()?.id || activePlaylistId,
+                                    )
                                     render()
                                 } catch (err) {
                                     console.error('Error while undoing playlist reorder', err)
@@ -364,8 +466,7 @@ export function initializePlaylistPage() {
                         )
 
                         playlists = updatedPlaylists
-                        activePlaylistId = getActivePlaylist()?.id || activePlaylistId
-                        window.playlistViewState = { activePlaylistId }
+                        setActivePlaylistState(getActivePlaylist()?.id || activePlaylistId)
                         render()
                     } catch (e) {
                         console.error('Failed to save reordered playlist', e)
@@ -381,16 +482,174 @@ export function initializePlaylistPage() {
         }
     }
 
-    function renderTracks(activePlaylist) {
-        if (typeof cleanupTrackMenuToggles === 'function') {
-            cleanupTrackMenuToggles()
-            cleanupTrackMenuToggles = null
+    function getTrackDurationFromRecord(track) {
+        if (typeof track?.duration === 'number' && track.duration > 0) {
+            return track.duration
         }
 
+        const filePath =
+            typeof track === 'string'
+                ? track.trim()
+                : typeof track?.filePath === 'string'
+                  ? track.filePath.trim()
+                  : ''
+
+        return filePath ? durationCache.get(filePath) : null
+    }
+
+    function updateDurationCell(index, duration) {
+        const durationCell = body.querySelector(`td[data-duration-index="${index}"]`)
+        if (durationCell) {
+            durationCell.textContent = formatDurationClock(duration)
+        }
+
+        const cached = virtualRowCache.get(index)
+        if (cached) {
+            cached.duration = duration
+        }
+    }
+
+    function scheduleDurationCellUpdate(trackIndex) {
+        if (Number.isInteger(trackIndex)) {
+            pendingDurationCellIndexes.add(trackIndex)
+        }
+
+        if (durationCellsRaf) {
+            return
+        }
+
+        durationCellsRaf = requestAnimationFrame(() => {
+            durationCellsRaf = null
+            renderDurationCellUpdates(Array.from(pendingDurationCellIndexes))
+            pendingDurationCellIndexes.clear()
+        })
+    }
+
+    function renderDurationCellUpdates(trackIndexes) {
+        const activePlaylist = getActivePlaylist()
+        trackIndexes.forEach((trackIndex) => {
+            updateDurationCell(
+                trackIndex,
+                getTrackDurationFromRecord(activePlaylist?.tracks?.[trackIndex]),
+            )
+        })
+    }
+
+    function applyRowDecorations(rows) {
+        if (!rows.length) {
+            return
+        }
+
+        window.lucide?.createIcons({
+            nodes: rows.flatMap((row) => Array.from(row.querySelectorAll('[data-lucide]'))),
+        })
+        rows.forEach((row) => {
+            bindImageFallbacks({
+                scope: row,
+                selector: '.playlistTrackCover',
+            })
+        })
+    }
+
+    function resetVirtualRows() {
+        if (durationCellsRaf) {
+            cancelAnimationFrame(durationCellsRaf)
+            durationCellsRaf = null
+        }
+        pendingDurationCellIndexes.clear()
+        virtualRowCache.clear()
+        paddingTopRow = null
+        paddingBottomRow = null
+    }
+
+    function syncBodyChildren(nodes) {
+        let cursor = body.firstElementChild
+
+        nodes.forEach((node) => {
+            if (cursor === node) {
+                cursor = cursor.nextElementSibling
+                return
+            }
+
+            body.insertBefore(node, cursor)
+        })
+
+        while (body.children.length > nodes.length) {
+            body.removeChild(body.lastElementChild)
+        }
+    }
+
+    function renderPaddingRow(className, height) {
+        const row = document.createElement('tr')
+        row.className = className
+        const cell = document.createElement('td')
+        cell.colSpan = 7
+        cell.style.height = `${height}px`
+        row.appendChild(cell)
+        return row
+    }
+
+    function ensurePaddingRow(row, className, height) {
+        const paddingRow = row || renderPaddingRow(className, height)
+        const cell = paddingRow.firstElementChild
+        if (cell?.style.height !== `${height}px`) {
+            cell.style.height = `${height}px`
+        }
+        return paddingRow
+    }
+
+    function getCachedVirtualRow({ index, track, duration, rowHeight }) {
+        const cached = virtualRowCache.get(index)
+        if (
+            cached?.track === track &&
+            cached.duration === duration &&
+            cached.rowHeight === rowHeight
+        ) {
+            return { node: cached.node, created: false }
+        }
+
+        const normalizedTrack = normalizeTrackRecord(track)
+        const node = renderTrackRow({
+            index,
+            track,
+            normalizedTrack,
+            duration,
+            rowHeight,
+        })
+        virtualRowCache.set(index, {
+            track,
+            duration,
+            rowHeight,
+            node,
+        })
+
+        return { node, created: true }
+    }
+
+    function trimVirtualRowCache(renderedIndexes) {
+        if (virtualRowCache.size <= PLAYLIST_VIRTUAL_ROW_CACHE_LIMIT) {
+            return
+        }
+
+        const rendered = Array.from(renderedIndexes)
+        const anchor = rendered.length
+            ? Math.round((Math.min(...rendered) + Math.max(...rendered)) / 2)
+            : 0
+
+        Array.from(virtualRowCache.keys())
+            .filter((index) => !renderedIndexes.has(index))
+            .sort((a, b) => Math.abs(b - anchor) - Math.abs(a - anchor))
+            .slice(0, virtualRowCache.size - PLAYLIST_VIRTUAL_ROW_CACHE_LIMIT)
+            .forEach((index) => virtualRowCache.delete(index))
+    }
+
+    function renderTracks(activePlaylist, reason = 'render') {
         const tracks = activePlaylist?.tracks || []
 
         if (!tracks.length) {
             // Render a single empty-row node instead of string HTML
+            resetVirtualRows()
+            activeRenderedMode = 'empty'
             body.innerHTML = ''
             const tr = document.createElement('tr')
             const td = document.createElement('td')
@@ -408,205 +667,141 @@ export function initializePlaylistPage() {
             return
         }
 
-        const canVirtualize = typeof createVirtualizer === 'function'
+        if (tracks.length > 80 && canUsePlaylistVirtualizer()) {
+            if (activeRenderedMode !== 'virtual') {
+                resetVirtualRows()
+                activeRenderedMode = 'virtual'
+            }
 
-        // Build rows as DOM nodes into a DocumentFragment
-        const fragment = document.createDocumentFragment()
-
-        if (canVirtualize) {
+            const scrollMargin = getPlaylistContentScrollMargin({
+                force: reason !== 'virtual-change',
+            })
             if (!virtualizer) {
-                virtualizer = createVirtualizer({
+                virtualizer = createPlaylistVirtualizer({
                     count: tracks.length,
                     getScrollElement: getAppScrollElement,
-                    estimateSize: () => 56,
-                    overscan: 10,
+                    estimateSize: () => PLAYLIST_TRACK_ROW_HEIGHT,
+                    overscan: PLAYLIST_TRACK_OVERSCAN,
+                    scrollMargin,
+                    initialOffset: getAppScrollTop,
+                    initialRect: {
+                        width: trackContainer.clientWidth || window.innerWidth || 0,
+                        height: getAppViewportHeight(),
+                    },
+                    onChange: scheduleTrackRender,
                 })
-
-                virtualizerScrollHandler = () => {
-                    virtualizer.measure()
-                    if (scrollRaf) cancelAnimationFrame(scrollRaf)
-                    scrollRaf = requestAnimationFrame(() => {
-                        const ap = getActivePlaylist()
-                        if (ap) renderTracks(ap)
-                    })
-                }
-                attachedAppScrollElement = getAppScrollElement()
-                attachedAppScrollElement.addEventListener('scroll', virtualizerScrollHandler, {
-                    passive: true,
-                })
-                window.addEventListener('resize', virtualizerScrollHandler, { passive: true })
             } else if (typeof virtualizer.setOptions === 'function') {
-                virtualizer.setOptions({
-                    ...virtualizer.options,
-                    count: tracks.length,
-                })
+                const options = virtualizer.options || {}
+                if (options.count !== tracks.length || options.scrollMargin !== scrollMargin) {
+                    virtualizer.setOptions({
+                        ...options,
+                        count: tracks.length,
+                        scrollMargin,
+                    })
+                    virtualizer._willUpdate?.()
+                }
             }
 
             const virtualItems = virtualizer.getVirtualItems()
+            const renderedNodes = []
+            const createdRows = []
+            const renderedIndexes = new Set()
 
-            const paddingTop = virtualItems.length > 0 ? virtualItems[0].start : 0
+            const paddingTop =
+                virtualItems.length > 0 ? Math.max(0, virtualItems[0].start - scrollMargin) : 0
             const paddingBottom =
                 virtualItems.length > 0
-                    ? virtualizer.getTotalSize() - virtualItems[virtualItems.length - 1].end
+                    ? Math.max(
+                          0,
+                          virtualizer.getTotalSize() - virtualItems[virtualItems.length - 1].end,
+                      )
                     : 0
 
             if (paddingTop > 0) {
-                const trTop = document.createElement('tr')
-                trTop.className = 'virtual-padding-top'
-                const tdTop = document.createElement('td')
-                tdTop.colSpan = 7
-                tdTop.style.height = `${paddingTop}px`
-                trTop.appendChild(tdTop)
-                fragment.appendChild(trTop)
+                paddingTopRow = ensurePaddingRow(paddingTopRow, 'virtual-padding-top', paddingTop)
+                renderedNodes.push(paddingTopRow)
+            } else {
+                paddingTopRow = null
             }
 
             virtualItems.forEach((virtualItem) => {
                 const index = virtualItem.index
                 const track = tracks[index]
-                const normalizedTrack = normalizeTrackRecord(track)
-                const duration =
-                    typeof normalizedTrack?.duration === 'number' && normalizedTrack.duration > 0
-                        ? normalizedTrack.duration
-                        : durationCache.get(normalizedTrack?.filePath)
+                const duration = getTrackDurationFromRecord(track)
 
-                const rowNode = renderTrackRow({
+                const rowResult = getCachedVirtualRow({
                     index,
                     track,
                     duration,
                     rowHeight: virtualItem.size,
                 })
-                fragment.appendChild(rowNode)
+                renderedIndexes.add(index)
+                renderedNodes.push(rowResult.node)
+                if (rowResult.created) {
+                    createdRows.push(rowResult.node)
+                }
             })
 
             if (paddingBottom > 0) {
-                const trBottom = document.createElement('tr')
-                trBottom.className = 'virtual-padding-bottom'
-                const tdBottom = document.createElement('td')
-                tdBottom.colSpan = 7
-                tdBottom.style.height = `${paddingBottom}px`
-                trBottom.appendChild(tdBottom)
-                fragment.appendChild(trBottom)
+                paddingBottomRow = ensurePaddingRow(
+                    paddingBottomRow,
+                    'virtual-padding-bottom',
+                    paddingBottom,
+                )
+                renderedNodes.push(paddingBottomRow)
+            } else {
+                paddingBottomRow = null
             }
+
+            trimVirtualRowCache(renderedIndexes)
+
+            syncBodyChildren(renderedNodes)
+
+            applyRowDecorations(createdRows)
         } else {
-            // Local virtualization fallback: compute visible window based on page scroll
-            const ROW_ESTIMATE = 56
-            const OVERSCAN = 8
-
-            const table = trackContainer.querySelector('.playlistTrackTable')
-            const thead = table?.querySelector('thead')
-            let lastStart = -1
-            let lastEnd = -1
-
-            function computeVirtualRange() {
-                const scrollTop = getAppScrollTop()
-                const viewportHeight = getAppViewportHeight()
-                const containerTop = getElementTopWithinAppScroll(trackContainer)
-                const headerHeight = thead ? thead.getBoundingClientRect().height : 0
-                const contentStart = containerTop + headerHeight
-
-                let start = Math.floor((scrollTop - contentStart) / ROW_ESTIMATE) - OVERSCAN
-                let end =
-                    Math.ceil((scrollTop - contentStart + viewportHeight) / ROW_ESTIMATE) + OVERSCAN
-
-                if (start < 0) start = 0
-                if (end < 0) end = 0
-                if (start > tracks.length - 1) start = tracks.length - 1
-                if (end > tracks.length - 1) end = tracks.length - 1
-
-                if (start === lastStart && end === lastEnd) return null
-                lastStart = start
-                lastEnd = end
-
-                const paddingTop = start * ROW_ESTIMATE
-                const paddingBottom = Math.max(0, (tracks.length - end - 1) * ROW_ESTIMATE)
-
-                return { start, end, paddingTop, paddingBottom }
+            if (activeRenderedMode !== 'full') {
+                resetVirtualRows()
+                activeRenderedMode = 'full'
             }
 
-            // initial render range
-            const range = computeVirtualRange()
-            if (range) {
-                const { start, end, paddingTop, paddingBottom } = range
-
-                if (paddingTop > 0) {
-                    const trTop = document.createElement('tr')
-                    trTop.className = 'virtual-padding-top'
-                    const tdTop = document.createElement('td')
-                    tdTop.colSpan = 7
-                    tdTop.style.height = `${paddingTop}px`
-                    trTop.appendChild(tdTop)
-                    fragment.appendChild(trTop)
-                }
-
-                for (let i = start; i <= end; i++) {
-                    const track = tracks[i]
-                    const normalizedTrack = normalizeTrackRecord(track)
-                    const duration =
-                        typeof normalizedTrack?.duration === 'number' &&
-                        normalizedTrack.duration > 0
-                            ? normalizedTrack.duration
-                            : durationCache.get(normalizedTrack?.filePath)
-
-                    const rowNode = renderTrackRow({ index: i, track, duration })
-                    fragment.appendChild(rowNode)
-                }
-
-                if (paddingBottom > 0) {
-                    const trBottom = document.createElement('tr')
-                    trBottom.className = 'virtual-padding-bottom'
-                    const tdBottom = document.createElement('td')
-                    tdBottom.colSpan = 7
-                    tdBottom.style.height = `${paddingBottom}px`
-                    trBottom.appendChild(tdBottom)
-                    fragment.appendChild(trBottom)
-                }
+            if (virtualizer?.destroy) {
+                virtualizer.destroy()
             }
+            virtualizer = null
 
-            // attach scroll/resize handler to update visible range
-            if (!virtualizer) {
-                virtualizer = { local: true }
-
-                virtualizerScrollHandler = () => {
-                    if (scrollRaf) cancelAnimationFrame(scrollRaf)
-                    scrollRaf = requestAnimationFrame(() => {
-                        const freshActivePlaylist = getActivePlaylist()
-                        if (freshActivePlaylist) {
-                            renderTracks(freshActivePlaylist)
-                        }
-                    })
-                }
-
-                attachedAppScrollElement = getAppScrollElement()
-                attachedAppScrollElement.addEventListener('scroll', virtualizerScrollHandler, {
-                    passive: true,
+            const fragment = document.createDocumentFragment()
+            const renderedRows = []
+            for (let i = 0; i < tracks.length; i++) {
+                const track = tracks[i]
+                const normalizedTrack = normalizeTrackRecord(track)
+                const duration = getTrackDurationFromRecord(normalizedTrack)
+                const row = renderTrackRow({
+                    index: i,
+                    track,
+                    normalizedTrack,
+                    duration,
                 })
-                window.addEventListener('resize', virtualizerScrollHandler, { passive: true })
+
+                renderedRows.push(row)
+                fragment.appendChild(row)
             }
+
+            // replace tbody content with constructed fragment
+            body.replaceChildren(fragment)
+            applyRowDecorations(renderedRows)
         }
 
-        // replace tbody content with constructed fragment
-        body.innerHTML = ''
-        body.appendChild(fragment)
-
-        hydrateTrackDurations(activePlaylist)
-        window.lucide?.createIcons()
-        bindImageFallbacks({
-            scope: body,
-            selector: '.playlistTrackCover',
-        })
-
-        cleanupTrackMenuToggles = attachIndexedMenuToggle({
-            scope: body,
-            triggerSelector: '.playlistTrackMoreBtn',
-            menuSelector: '.playlistTrackMenu',
-            indexAttribute: 'data-track-index',
-        })
-
-        attachTrackActionHandlers(body)
-        initializeSortableIfNeeded()
+        if (reason !== 'virtual-change') {
+            attachTrackActionHandlers()
+            initializeSortableIfNeeded()
+        }
     }
 
     function renderHeader(activePlaylist) {
+        const renderHeaderIcon = () => {
+            window.lucide?.createIcons({ nodes: [imageEditButton] })
+        }
+
         if (!activePlaylist) {
             title.textContent = 'No playlist selected'
             trackCountElement.textContent = 'Choose a playlist from your library.'
@@ -614,7 +809,7 @@ export function initializePlaylistPage() {
             imageEditButton.disabled = true
             bindImageFallback(image)
             image.src = './assets/music-placeholder.png'
-            window.lucide?.createIcons({ nodes: [imageEditButton] })
+            renderHeaderIcon()
             return
         }
 
@@ -626,41 +821,28 @@ export function initializePlaylistPage() {
 
         bindImageFallback(image)
         image.src = playlistImage
-        window.lucide?.createIcons({ nodes: [imageEditButton] })
+        renderHeaderIcon()
     }
 
     function render() {
         const activePlaylist = getActivePlaylist()
         renderHeader(activePlaylist)
-        renderTracks(activePlaylist)
+        renderTracks(activePlaylist, 'route-render')
         renderTotalDuration(activePlaylist)
         renderPlayButtonIcon()
-    }
-
-    async function waitForDurations() {
-        const activePlaylist = getActivePlaylist()
-
-        if (!activePlaylist?.tracks) return
-
-        const concurrency = 10
-        const queue = [...activePlaylist.tracks]
-
-        const workers = Array.from({ length: concurrency }, async () => {
-            while (queue.length) {
-                const track = queue.shift()
-
-                await resolveTrackDuration(track)
-
-                await new Promise((r) => setTimeout(r, 0))
-            }
-        })
-
-        await Promise.all(workers)
     }
 
     async function hydrate() {
         try {
             window.loader?.show('Loading playlists...')
+            try {
+                await loadPlaylistVirtualCore()
+            } catch (error) {
+                console.error(
+                    'Failed to load TanStack Virtual Core; using full playlist render',
+                    error,
+                )
+            }
 
             const loadedPlaylists = await sessionService.loadUserPlaylists()
 
@@ -679,15 +861,11 @@ export function initializePlaylistPage() {
                 activePlaylistId = playlists[0]?.id || null
             }
 
-            window.playlistViewState = {
-                activePlaylistId,
-            }
+            setActivePlaylistState(activePlaylistId)
 
             render()
 
             // window.loader?.setMessage('Finalizing...')
-
-            waitForDurations()
 
             window.loader?.hide()
         } catch (err) {
@@ -734,16 +912,10 @@ export function initializePlaylistPage() {
             })
 
             isSavingPlaylistImage = true
-            const saved = await sessionService.saveUserPlaylists(updatedPlaylists)
-            if (!saved) {
-                console.error('Failed to save playlist image')
-                return
-            }
-
-            playlists = updatedPlaylists
-            activePlaylistId = activePlaylist.id
-            window.playlistViewState = { activePlaylistId }
-            render()
+            await savePlaylistsAndRender(updatedPlaylists, {
+                activeId: activePlaylist.id,
+                errorMessage: 'Failed to save playlist image',
+            })
         } catch (error) {
             console.error('Failed to update playlist image', error)
         } finally {
@@ -758,7 +930,7 @@ export function initializePlaylistPage() {
         }
     }
     window.addEventListener('user-playlists:updated', onPlaylistsUpdated)
-    // Attach global undo shortcut for this page (Ctrl/Cmd+Z)
+    // Attach global undo shortcut for this page (Ctrl+Z)
     attachUndoShortcut()
 
     const cleanup = () => {
@@ -772,21 +944,16 @@ export function initializePlaylistPage() {
             }
             sortableInstance = null
         }
-        if (typeof cleanupTrackMenuToggles === 'function') {
-            cleanupTrackMenuToggles()
-            cleanupTrackMenuToggles = null
+        if (typeof cleanupTrackActions === 'function') {
+            cleanupTrackActions()
+            cleanupTrackActions = null
         }
         if (virtualizer) {
-            if (virtualizerScrollHandler) {
-                attachedAppScrollElement?.removeEventListener('scroll', virtualizerScrollHandler)
-                window.removeEventListener('resize', virtualizerScrollHandler)
-                virtualizerScrollHandler = null
-                attachedAppScrollElement = null
-            }
             if (scrollRaf) {
                 cancelAnimationFrame(scrollRaf)
                 scrollRaf = null
             }
+            virtualizer.destroy?.()
             virtualizer = null
         }
     }

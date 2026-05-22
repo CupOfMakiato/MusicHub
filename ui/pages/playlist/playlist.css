@@ -142,20 +142,24 @@
 .playlistTrackActions {
     position: relative;
     display: flex;
-    align-items: flex-start;
-    margin-left: 8px;
-    z-index: 20;
+    align-items: center;
+    justify-content: center;
+    margin-left: 0;
+    z-index: 22;
 }
 
 .playlistTrackRow {
     position: relative;
     z-index: 1;
+    height: 60px;
 }
 
+.playlistTrackRow.is-menu-open,
 .playlistTrackRow:has(.playlistTrackMenu.is-open) {
     z-index: 90;
 }
 
+.playlistTrackActions.is-menu-open,
 .playlistTrackActions:has(.playlistTrackMenu.is-open) {
     z-index: 100;
 }
@@ -171,7 +175,7 @@
     border: 1px solid #d9dee7;
     border-radius: 8px;
     box-shadow: 0 8px 18px rgba(23, 31, 56, 0.12);
-    z-index: 10;
+    z-index: 100;
     padding: 6px;
 }
 .playlistTrackMenu.is-open {
@@ -248,21 +252,68 @@
     overflow: visible;
 }
 
+/* .playlistTrackTable {
+    width: 100%;
+    border-collapse: collapse;
+} */
+
+/* .playlistTrackTable th,
+.playlistTrackTable td {
+    padding: 10px;
+    border-bottom: 1px solid #edf1f5;
+    text-align: center;
+    font-size: 13px;
+} */
+
 .playlistTrackTable {
     width: 100%;
     border-collapse: collapse;
+    table-layout: fixed;
 }
 
-.playlistTrackTable th,
-.playlistTrackTable td {
+.playlistTrackTable th {
     padding: 10px;
     border-bottom: 1px solid #edf1f5;
     text-align: center;
     font-size: 13px;
 }
 
+.playlistTrackTable td {
+    height: 60px;
+    padding: 0 1px;
+    border-bottom: 1px solid #edf1f5;
+    text-align: center;
+    font-size: 13px;
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+.playlistTrackTable th:first-child,
 .playlistTrackIndexCell {
     width: 56px;
+}
+
+.playlistTrackTable th:last-child,
+.playlistTrackActionsCell {
+    width: 48px;
+}
+
+.playlistTrackTable td.playlistTrackActionsCell {
+    overflow: visible;
+    position: relative;
+    z-index: 2;
+}
+
+.playlistTrackTable td.playlistTrackActionsCell:has(.playlistTrackMenu.is-open),
+.playlistTrackTable td.playlistTrackActionsCell.is-menu-open {
+    z-index: 120;
+}
+
+.playlistTrackTable .virtual-padding-top td,
+.playlistTrackTable .virtual-padding-bottom td {
+    padding: 0;
+    border-bottom: 0;
+    overflow: hidden;
 }
 
 .playlistTrackIndexPlayBtn {

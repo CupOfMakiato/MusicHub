@@ -10,8 +10,14 @@ import { resolveTrackImage } from '../../utils/playlist-media.js'
 import { formatDate } from '../../utils/date.js'
 import { formatDurationClock } from '../../utils/duration.js'
 
-export function renderTrackRow({ index, track, duration, rowHeight } = {}) {
-    const normalizedTrack = normalizeTrackRecord(track)
+export function renderTrackRow({
+    index,
+    track,
+    normalizedTrack: preparedTrack,
+    duration,
+    rowHeight,
+} = {}) {
+    const normalizedTrack = preparedTrack || normalizeTrackRecord(track)
     const trackTitle = normalizedTrack?.title || DEFAULT_TRACK_TITLE
     const artist = normalizedTrack?.artist || DEFAULT_TRACK_ARTIST
     const album = normalizedTrack?.album || DEFAULT_TRACK_ALBUM
@@ -81,6 +87,7 @@ export function renderTrackRow({ index, track, duration, rowHeight } = {}) {
     tr.appendChild(tdDuration)
 
     const tdActions = document.createElement('td')
+    tdActions.className = 'playlistTrackActionsCell'
     const actionsDiv = document.createElement('div')
     actionsDiv.className = 'playlistTrackActions'
     const moreBtn = document.createElement('button')
