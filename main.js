@@ -3,9 +3,9 @@
 const path = require('path')
 const fs = require('fs')
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron')
+const jsmediatags = require('jsmediatags')
 const AUDIO_EXTENSIONS = new Set(['.mp3', '.wav'])
 const MAX_AUDIO_FILE_BYTES = Number(process.env.MAX_AUDIO_FILE_BYTES || 100 * 1024 * 1024)
-const MAX_METADATA_READ_BYTES = Number(process.env.MAX_METADATA_READ_BYTES || 512 * 1024)
 const DEFAULT_VOLUME = 0.7
 let settingsStore = null
 const allowedAudioPaths = new Set()
@@ -107,6 +107,142 @@ function normalizePlaybackPosition(value) {
     const parsed = Number(value)
     if (!Number.isFinite(parsed)) return 0
     return Math.max(0, parsed)
+}
+
+async function getApprovedAudioFileStats(filePath, actionName) {
+    if (!isAllowedAudioPath(filePath) && !isPathUnderApprovedDirectory(filePath)) {
+        console.warn(`Blocked ${actionName} for non-approved path:`, filePath)
+        return null
+    }
+
+    const extension = path.extname(filePath).toLowerCase()
+    if (!AUDIO_EXTENSIONS.has(extension)) {
+        console.warn(`Blocked ${actionName} for unsupported extension:`, extension)
+        return null
+    }
+
+    const stats = await fs.promises.stat(filePath)
+    if (!stats.isFile()) {
+        console.warn(`Blocked ${actionName} for non-file path:`, filePath)
+        return null
+    }
+
+    if (stats.size > MAX_AUDIO_FILE_BYTES) {
+        console.warn(`Blocked ${actionName} due to file size limit:`, {
+            filePath,
+            fileSize: stats.size,
+            maxSize: MAX_AUDIO_FILE_BYTES,
+        })
+        return null
+    }
+
+    return stats
+}
+
+function normalizeMetadataTagValue(value) {
+    if (value === undefined || value === null) {
+        return null
+    }
+
+    if (Array.isArray(value)) {
+        return value.map((item) => String(item)).join(', ')
+    }
+
+    return String(value)
+}
+
+function normalizeImageMime(format) {
+    const normalized = (format || 'image/jpeg').toLowerCase()
+
+    if (normalized.includes('/')) {
+        return normalized
+    }
+
+    if (normalized === 'jpg') {
+        return 'image/jpeg'
+    }
+
+    return `image/${normalized}`
+}
+
+function normalizeMetadataPicture(picture) {
+    if (!picture?.data) {
+        return {
+            image: null,
+            pictureFormat: null,
+            pictureBytes: 0,
+        }
+    }
+
+    let buffer = null
+    if (Array.isArray(picture.data)) {
+        buffer = Buffer.from(picture.data)
+    } else if (picture.data instanceof Uint8Array) {
+        buffer = Buffer.from(picture.data)
+    } else if (picture.data instanceof ArrayBuffer) {
+        buffer = Buffer.from(new Uint8Array(picture.data))
+    }
+
+    if (!buffer?.length) {
+        return {
+            image: null,
+            pictureFormat: null,
+            pictureBytes: 0,
+        }
+    }
+
+    const pictureFormat = normalizeImageMime(picture.format)
+    return {
+        image: `data:${pictureFormat};base64,${buffer.toString('base64')}`,
+        pictureFormat,
+        pictureBytes: buffer.length,
+    }
+}
+
+function normalizeAudioMetadataTags(tags = {}) {
+    const picture = normalizeMetadataPicture(tags.picture)
+    const metadata = {
+        title: normalizeMetadataTagValue(tags.title),
+        artist: normalizeMetadataTagValue(tags.artist),
+        album: normalizeMetadataTagValue(tags.album),
+        year: normalizeMetadataTagValue(tags.year),
+        genre: normalizeMetadataTagValue(tags.genre),
+        track: normalizeMetadataTagValue(tags.track),
+        disc: normalizeMetadataTagValue(tags.disc),
+        image: picture.image,
+        pictureFormat: picture.pictureFormat,
+        pictureBytes: picture.pictureBytes,
+    }
+
+    const hasMetadata = Boolean(
+        metadata.title ||
+            metadata.artist ||
+            metadata.album ||
+            metadata.year ||
+            metadata.genre ||
+            metadata.track ||
+            metadata.disc ||
+            metadata.image,
+    )
+
+    return hasMetadata ? metadata : null
+}
+
+function readAudioMetadata(filePath) {
+    return new Promise((resolve) => {
+        jsmediatags.read(filePath, {
+            onSuccess: (tag) => {
+                resolve(normalizeAudioMetadataTags(tag?.tags || {}))
+            },
+            onError: (error) => {
+                console.warn('Failed to read audio metadata:', {
+                    filePath,
+                    error: error?.info || error?.type || String(error || 'unknown error'),
+                })
+                resolve(null)
+            },
+        })
+    })
 }
 
 function findNthOccurrenceIndex(items, targetValue, targetOccurrence) {
@@ -475,62 +611,15 @@ ipcMain.handle('file:approveRecentAudioPath', async (event, filePath) => {
     }
 })
 
-ipcMain.handle(
-    'file:readAudioFile',
-    async (event, filePath, maxBytes = MAX_METADATA_READ_BYTES) => {
-        try {
-            if (!isAllowedAudioPath(filePath) && !isPathUnderApprovedDirectory(filePath)) {
-                console.warn('Blocked readAudioFile for non-approved path:', filePath)
-                return null
-            }
-
-            const extension = path.extname(filePath).toLowerCase()
-            if (!AUDIO_EXTENSIONS.has(extension)) {
-                console.warn('Blocked readAudioFile for unsupported extension:', extension)
-                return null
-            }
-
-            const stats = await fs.promises.stat(filePath)
-            if (!stats.isFile()) {
-                console.warn('Blocked readAudioFile for non-file path:', filePath)
-                return null
-            }
-
-            if (stats.size > MAX_AUDIO_FILE_BYTES) {
-                console.warn('Blocked readAudioFile due to file size limit:', {
-                    filePath,
-                    fileSize: stats.size,
-                    maxSize: MAX_AUDIO_FILE_BYTES,
-                })
-                return null
-            }
-
-            const requestedBytes = Number(maxBytes)
-            const safeRequestedBytes =
-                Number.isFinite(requestedBytes) && requestedBytes > 0
-                    ? Math.floor(requestedBytes)
-                    : MAX_METADATA_READ_BYTES
-
-            const bytesToRead = Math.max(
-                1,
-                Math.min(stats.size, safeRequestedBytes, MAX_METADATA_READ_BYTES),
-            )
-
-            const fileHandle = await fs.promises.open(filePath, 'r')
-            try {
-                const buffer = Buffer.allocUnsafe(bytesToRead)
-                const { bytesRead } = await fileHandle.read(buffer, 0, bytesToRead, 0)
-                if (bytesRead <= 0) {
-                    return null
-                }
-
-                return buffer.subarray(0, bytesRead)
-            } finally {
-                await fileHandle.close()
-            }
-        } catch (error) {
-            console.error('Failed to read file:', error)
+ipcMain.handle('file:readAudioMetadata', async (event, filePath) => {
+    try {
+        if (!(await getApprovedAudioFileStats(filePath, 'readAudioMetadata'))) {
             return null
         }
-    },
-)
+
+        return await readAudioMetadata(filePath)
+    } catch (error) {
+        console.error('Failed to read audio metadata:', error)
+        return null
+    }
+})

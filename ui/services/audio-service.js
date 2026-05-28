@@ -4,12 +4,10 @@ import { toFileUrl, getBaseName } from '../utils/file-path.js'
 
 export const audioService = (() => {
     const DEFAULT_VOLUME = 0.7
-    const METADATA_READ_BYTES = 512 * 1024
     const METADATA_DEBUG_ENABLED = true
     const UNKNOWN_TITLE_LABEL = 'Unknown Title'
     const UNKNOWN_ARTIST_LABEL = 'Unknown Artist'
     const UNKNOWN_ALBUM_LABEL = 'Unknown Album'
-    const NO_METADATA_LABEL = 'No metadata available'
     const Howl = window.Howl
     const Howler = window.Howler
     const metadataCache = new Map()
@@ -24,47 +22,16 @@ export const audioService = (() => {
         return Math.max(0, Math.min(1, parsed))
     }
 
-    function arrayBufferToBase64(data) {
-        let binary = ''
-        for (let i = 0; i < data.length; i += 1) {
-            binary += String.fromCharCode(data[i])
-        }
-        return window.btoa(binary)
-    }
-
-    function normalizeImageMime(format) {
-        const normalized = (format || 'image/jpeg').toLowerCase()
-
-        if (normalized.includes('/')) {
-            return normalized
-        }
-
-        if (normalized === 'jpg') {
-            return 'image/jpeg'
-        }
-
-        return `image/${normalized}`
-    }
-
-    function getPictureDataUrl(picture) {
-        if (!picture || !picture.data) return null
-
-        const mimeType = normalizeImageMime(picture.format)
-        const bytes =
-            picture.data instanceof Uint8Array ? picture.data : new Uint8Array(picture.data)
-        return `data:${mimeType};base64,${arrayBufferToBase64(bytes)}`
-    }
-
     function logMetadataDebug(filePath, phase, payload = {}) {
         if (!METADATA_DEBUG_ENABLED) return
         void filePath
         void phase
         void payload
         // console.log('[metadata-debug]', {
-        // 	phase,
-        // 	filePath,
-        // 	fileName,
-        // 	...payload,
+        //     phase,
+        //     filePath,
+        //     // fileName,
+        //     ...payload,
         // })
     }
 
@@ -77,21 +44,64 @@ export const audioService = (() => {
         }
     }
 
-    function buildNoMetadataTrackData(fallbackTitle) {
-        return {
-            title: fallbackTitle || UNKNOWN_TITLE_LABEL,
-            artist: NO_METADATA_LABEL,
-            album: NO_METADATA_LABEL,
-            image: null,
-        }
-    }
-
     function buildResolvedMetadataFromTags(rawTags, fallbackTitle) {
         return {
             title: rawTags?.title || fallbackTitle || UNKNOWN_TITLE_LABEL,
             artist: rawTags?.artist || UNKNOWN_ARTIST_LABEL,
             album: rawTags?.album || UNKNOWN_ALBUM_LABEL,
-            image: getPictureDataUrl(rawTags?.picture),
+            image: rawTags?.image || null,
+        }
+    }
+
+    function getMetadataErrorMessage(error) {
+        return error?.info || error?.type || String(error || 'unknown error')
+    }
+
+    // function logResolvedMetadataDebug(filePath, fallbackTitle, rawTags, source) {
+    //     logMetadataDebug(filePath, 'metadata-loaded', {
+    //         fallbackTitle,
+    //         source,
+    //         title: rawTags?.title || null,
+    //         artist: rawTags?.artist || null,
+    //         album: rawTags?.album || null,
+    //         year: rawTags?.year || null,
+    //         genre: rawTags?.genre || null,
+    //         track: rawTags?.track || null,
+    //         disc: rawTags?.disc || null,
+    //         hasPicture: Boolean(rawTags?.image),
+    //         pictureFormat: rawTags?.pictureFormat || null,
+    //         pictureBytes: rawTags?.pictureBytes || 0,
+    //     })
+    // }
+
+    async function readMetadata(filePath, fallbackTitle) {
+        if (!window.electronAPI?.readAudioMetadata) {
+            logMetadataDebug(filePath, 'metadata-api-missing', {
+                fallbackTitle,
+            })
+            return null
+        }
+
+        try {
+            const rawTags = await window.electronAPI.readAudioMetadata(filePath)
+
+            if (!rawTags) {
+                logMetadataDebug(filePath, 'metadata-empty', {
+                    fallbackTitle,
+                    source: 'main-process',
+                })
+                return null
+            }
+
+            // logResolvedMetadataDebug(filePath, fallbackTitle, rawTags, 'main-process')
+            return buildResolvedMetadataFromTags(rawTags, fallbackTitle)
+        } catch (error) {
+            logMetadataDebug(filePath, 'metadata-read-error', {
+                fallbackTitle,
+                source: 'main-process',
+                error: getMetadataErrorMessage(error),
+            })
+            return null
         }
     }
 
@@ -119,80 +129,6 @@ export const audioService = (() => {
         playbackPersistTimer = window.setInterval(() => {
             savePlaybackSnapshot()
         }, 1000)
-    }
-
-    async function readMetadata(filePath, fallbackTitle) {
-        if (!window.jsmediatags) {
-            logMetadataDebug(filePath, 'jsmediatags-missing', {
-                fallbackTitle,
-            })
-            return buildNoMetadataTrackData(fallbackTitle)
-        }
-
-        try {
-            const fileData = await window.electronAPI.readAudioFile(filePath, METADATA_READ_BYTES)
-
-            if (!fileData) {
-                logMetadataDebug(filePath, 'file-data-missing', {
-                    fallbackTitle,
-                })
-                return buildNoMetadataTrackData(fallbackTitle)
-            }
-
-            let uint8Array = null
-            if (fileData instanceof Uint8Array) {
-                uint8Array = fileData
-            } else if (fileData instanceof ArrayBuffer) {
-                uint8Array = new Uint8Array(fileData)
-            } else if (Array.isArray(fileData)) {
-                uint8Array = Uint8Array.from(fileData)
-            }
-
-            if (!uint8Array || uint8Array.byteLength === 0) {
-                logMetadataDebug(filePath, 'metadata-bytes-invalid', {
-                    fallbackTitle,
-                })
-                return buildNoMetadataTrackData(fallbackTitle)
-            }
-
-            const blob = new Blob([uint8Array], { type: 'audio/mpeg' })
-
-            return await new Promise((resolve) => {
-                window.jsmediatags.read(blob, {
-                    onSuccess: (tag) => {
-                        const rawTags = tag?.tags || {}
-                        const pictureBytes = rawTags?.picture?.data?.length || 0
-                        logMetadataDebug(filePath, 'metadata-loaded', {
-                            fallbackTitle,
-                            title: rawTags.title || null,
-                            artist: rawTags.artist || null,
-                            album: rawTags.album || null,
-                            year: rawTags.year || null,
-                            genre: rawTags.genre || null,
-                            track: rawTags.track || null,
-                            disc: rawTags.disc || null,
-                            hasPicture: Boolean(rawTags.picture),
-                            pictureFormat: rawTags?.picture?.format || null,
-                            pictureBytes,
-                        })
-                        resolve(buildResolvedMetadataFromTags(rawTags, fallbackTitle))
-                    },
-                    onError: (error) => {
-                        logMetadataDebug(filePath, 'metadata-read-error', {
-                            fallbackTitle,
-                            error: error?.info || error?.type || String(error || 'unknown error'),
-                        })
-                        resolve(buildNoMetadataTrackData(fallbackTitle))
-                    },
-                })
-            })
-        } catch (error) {
-            logMetadataDebug(filePath, 'metadata-exception', {
-                fallbackTitle,
-                error: String(error?.message || error || 'unknown error'),
-            })
-            return buildNoMetadataTrackData(fallbackTitle)
-        }
     }
 
     async function resolveTrackMetadata(filePath) {

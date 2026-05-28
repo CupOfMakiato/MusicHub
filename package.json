@@ -48,7 +48,6 @@
             "preload.js",
             "ui/**/*",
             "node_modules/howler/dist/howler.min.js",
-            "node_modules/jsmediatags/dist/jsmediatags.min.js",
             "node_modules/lucide/dist/umd/lucide.min.js",
             "node_modules/sortablejs/modular/sortable.esm.js",
             "package.json",
