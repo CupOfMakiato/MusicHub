@@ -868,7 +868,7 @@ export function initializePlaylistPage() {
 
     async function hydrate() {
         try {
-            window.loader?.show('Loading playlists...')
+            window.loader?.show({ text: 'Loading playlists...', count: 8, variant: 'playlist' })
             try {
                 await loadPlaylistVirtualCore()
             } catch (error) {
