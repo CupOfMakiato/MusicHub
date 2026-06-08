@@ -167,6 +167,32 @@
     height: 60px;
 }
 
+/* .playlistTrackRow.isNowPlaying tr {
+    outline: 2px solid #5b8cff;
+    outline-offset: 2px;
+} */
+
+.playlistTrackRow.isNowPlaying td {
+    background: #f5f9fe;
+    box-shadow:
+        inset 0 2px 0 #5b8cff,
+        inset 0 -2px 0 #5b8cff;
+}
+
+.playlistTrackRow.isNowPlaying td:first-child {
+    box-shadow:
+        inset 2px 0 0 #5b8cff,
+        inset 0 2px 0 #5b8cff,
+        inset 0 -2px 0 #5b8cff;
+}
+
+.playlistTrackRow.isNowPlaying td:last-child {
+    box-shadow:
+        inset -2px 0 0 #5b8cff,
+        inset 0 2px 0 #5b8cff,
+        inset 0 -2px 0 #5b8cff;
+}
+
 .playlistTrackRow.is-menu-open {
     z-index: 90;
 }

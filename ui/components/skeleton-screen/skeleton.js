@@ -2,6 +2,70 @@ function getOverlay() {
     return document.getElementById('loadingOverlay')
 }
 
+function getElementRect(element) {
+    if (!element || typeof element.getBoundingClientRect !== 'function') {
+        return null
+    }
+
+    const rect = element.getBoundingClientRect()
+    if (rect.width <= 0 || rect.height <= 0) {
+        return null
+    }
+
+    return rect
+}
+
+function clearPlaylistOverlayBounds(overlay) {
+    overlay.style.removeProperty('--skeleton-overlay-top')
+    overlay.style.removeProperty('--skeleton-overlay-right')
+    overlay.style.removeProperty('--skeleton-overlay-bottom')
+    overlay.style.removeProperty('--skeleton-overlay-left')
+}
+
+function applyPlaylistOverlayBounds(overlay) {
+    const appScroll = window.appScrollElement || document.getElementById('app-scroll')
+    const routeHost = document.getElementById('recent-music')
+    const sidebar =
+        document.querySelector('#sidebar .sideBar') || document.getElementById('sidebar')
+
+    const scrollRect = getElementRect(appScroll)
+    const routeRect = getElementRect(routeHost)
+    const sidebarRect = getElementRect(sidebar)
+    const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0
+
+    let top = routeRect?.top ?? scrollRect?.top ?? 0
+    let left = routeRect?.left ?? scrollRect?.left ?? 0
+    let rightEdge = routeRect?.right ?? scrollRect?.right ?? viewportWidth
+    const bottomEdge = scrollRect?.bottom ?? viewportHeight
+
+    if (sidebarRect) {
+        const sidebarLooksHorizontal = sidebarRect.width >= viewportWidth * 0.4
+        const sidebarLooksVertical = sidebarRect.height >= viewportHeight * 0.4
+
+        if (sidebarLooksHorizontal && sidebarRect.top <= top && sidebarRect.bottom > top) {
+            top = Math.max(top, sidebarRect.bottom)
+        }
+
+        if (sidebarLooksVertical && sidebarRect.left <= left && sidebarRect.right > left) {
+            left = Math.max(left, sidebarRect.right)
+        }
+    }
+
+    rightEdge = Math.max(rightEdge, left)
+
+    overlay.style.setProperty('--skeleton-overlay-top', `${Math.max(0, Math.round(top))}px`)
+    overlay.style.setProperty(
+        '--skeleton-overlay-right',
+        `${Math.max(0, Math.round(viewportWidth - rightEdge))}px`,
+    )
+    overlay.style.setProperty(
+        '--skeleton-overlay-bottom',
+        `${Math.max(0, Math.round(viewportHeight - bottomEdge))}px`,
+    )
+    overlay.style.setProperty('--skeleton-overlay-left', `${Math.max(0, Math.round(left))}px`)
+}
+
 function ensureOverlayElements() {
     let overlay = getOverlay()
 
@@ -36,7 +100,12 @@ function ensureOverlayElements() {
 
 function renderSkeletonItems(container, count = 6, variant = 'row') {
     container.innerHTML = ''
-    container.classList.remove('skeleton-grid', 'skeleton-player', 'skeleton-rows')
+    container.classList.remove(
+        'skeleton-grid',
+        'skeleton-player',
+        'skeleton-rows',
+        'skeleton-table',
+    )
 
     if (variant === 'grid') {
         container.classList.add('skeleton-grid')
@@ -61,13 +130,9 @@ function renderSkeletonItems(container, count = 6, variant = 'row') {
     if (variant === 'playlist') {
         container.classList.add('skeleton-table')
 
-        // header card with optional banner and body (image + meta)
+        // Header card mirrors .playlistHeader and .playlistHeaderBody.
         const headerCard = document.createElement('div')
         headerCard.className = 'skeleton-header-card'
-
-        const banner = document.createElement('div')
-        banner.className = 'skeleton-banner skeleton-block'
-        headerCard.appendChild(banner)
 
         const headerBody = document.createElement('div')
         headerBody.className = 'skeleton-header-body'
@@ -108,70 +173,108 @@ function renderSkeletonItems(container, count = 6, variant = 'row') {
         controls.appendChild(advance)
         container.appendChild(controls)
 
-        // track section wrapper
+        // Track section mirrors .playlistTrackSection > .playlistTrackTable.
         const trackSection = document.createElement('div')
         trackSection.className = 'skeleton-track-section'
 
+        const table = document.createElement('table')
+        table.className = 'skeleton-track-table'
+
+        const thead = document.createElement('thead')
+        const headerRow = document.createElement('tr')
+        const headerCells = [
+            { className: 'skeleton-col-index', width: '24px' },
+            { className: 'skeleton-col-title', width: '48px' },
+            { className: 'skeleton-col-artist', width: '48px' },
+            { className: 'skeleton-col-album', width: '48px' },
+            { className: 'skeleton-col-date', width: '78px', subWidth: '64px' },
+            { className: 'skeleton-col-duration', width: '58px' },
+            { className: 'skeleton-col-actions', width: '1px' },
+        ]
+
+        headerCells.forEach((cell) => {
+            const th = document.createElement('th')
+            th.className = cell.className
+
+            if (cell.width !== '1px') {
+                const line = document.createElement('div')
+                line.className = 'skeleton-heading-line skeleton-block'
+                line.style.width = cell.width
+                th.appendChild(line)
+            }
+
+            if (cell.subWidth) {
+                const subline = document.createElement('div')
+                subline.className = 'skeleton-heading-subline skeleton-block'
+                subline.style.width = cell.subWidth
+                th.appendChild(subline)
+            }
+
+            headerRow.appendChild(th)
+        })
+
+        thead.appendChild(headerRow)
+        table.appendChild(thead)
+
+        const tbody = document.createElement('tbody')
+
         for (let i = 0; i < Math.max(1, count); i++) {
-            const row = document.createElement('div')
+            const row = document.createElement('tr')
             row.className = 'skeleton-table-row'
 
             // index
-            const colIndex = document.createElement('div')
+            const colIndex = document.createElement('td')
             colIndex.className = 'skeleton-cell skeleton-col-index'
             const idxLine = document.createElement('div')
-            idxLine.className = 'skeleton-line skeleton-block'
+            idxLine.className = 'skeleton-index-button skeleton-block'
             colIndex.appendChild(idxLine)
 
             // title (cover + lines)
-            const colTitle = document.createElement('div')
-            colTitle.className = 'skeleton-col-title'
+            const colTitle = document.createElement('td')
+            colTitle.className = 'skeleton-cell skeleton-col-title'
+            const titleWrap = document.createElement('div')
+            titleWrap.className = 'skeleton-track-title-wrap'
             const cover = document.createElement('div')
             cover.className = 'skeleton-track-cover skeleton-block'
-            const trackLines = document.createElement('div')
-            trackLines.className = 'skeleton-track-lines'
-            const t1 = document.createElement('div')
-            t1.className = 'skeleton-line skeleton-block'
-            const t2 = document.createElement('div')
-            t2.className = 'skeleton-line skeleton-block'
-            trackLines.appendChild(t1)
-            trackLines.appendChild(t2)
-            colTitle.appendChild(cover)
-            colTitle.appendChild(trackLines)
+            const titleLine = document.createElement('div')
+            titleLine.className = 'skeleton-track-title-line skeleton-block'
+            titleWrap.appendChild(cover)
+            titleWrap.appendChild(titleLine)
+            colTitle.appendChild(titleWrap)
 
             // artist
-            const colArtist = document.createElement('div')
+            const colArtist = document.createElement('td')
             colArtist.className = 'skeleton-cell skeleton-col-artist'
             const artistLine = document.createElement('div')
             artistLine.className = 'skeleton-line skeleton-block'
             colArtist.appendChild(artistLine)
 
             // album
-            const colAlbum = document.createElement('div')
+            const colAlbum = document.createElement('td')
             colAlbum.className = 'skeleton-cell skeleton-col-album'
             const albumLine = document.createElement('div')
             albumLine.className = 'skeleton-line skeleton-block'
             colAlbum.appendChild(albumLine)
 
             // date
-            const colDate = document.createElement('div')
+            const colDate = document.createElement('td')
             colDate.className = 'skeleton-cell skeleton-col-date'
             const dateLine = document.createElement('div')
             dateLine.className = 'skeleton-line skeleton-block'
             colDate.appendChild(dateLine)
 
             // duration
-            const colDuration = document.createElement('div')
+            const colDuration = document.createElement('td')
             colDuration.className = 'skeleton-cell skeleton-col-duration'
             const durLine = document.createElement('div')
             durLine.className = 'skeleton-line skeleton-block'
             colDuration.appendChild(durLine)
 
             // actions
-            const colActions = document.createElement('div')
+            const colActions = document.createElement('td')
             colActions.className = 'skeleton-cell skeleton-col-actions'
             const actLine = document.createElement('div')
-            actLine.className = 'skeleton-line skeleton-block'
+            actLine.className = 'skeleton-actions-button skeleton-block'
             colActions.appendChild(actLine)
 
             row.appendChild(colIndex)
@@ -182,9 +285,11 @@ function renderSkeletonItems(container, count = 6, variant = 'row') {
             row.appendChild(colDuration)
             row.appendChild(colActions)
 
-            trackSection.appendChild(row)
+            tbody.appendChild(row)
         }
 
+        table.appendChild(tbody)
+        trackSection.appendChild(table)
         container.appendChild(trackSection)
 
         return
@@ -293,6 +398,13 @@ export function initializeLoadingScreen() {
 
             if (status && text) status.textContent = text
 
+            const isPlaylistVariant = variant === 'playlist'
+            overlay.classList.toggle('loading-overlay-playlist', isPlaylistVariant)
+            if (isPlaylistVariant) {
+                applyPlaylistOverlayBounds(overlay)
+            } else {
+                clearPlaylistOverlayBounds(overlay)
+            }
             renderSkeletonItems(container, count, variant)
 
             overlay.style.display = 'flex'
@@ -308,6 +420,8 @@ export function initializeLoadingScreen() {
 
             hideTimeout = setTimeout(() => {
                 overlay.style.display = 'none'
+                overlay.classList.remove('loading-overlay-playlist')
+                clearPlaylistOverlayBounds(overlay)
                 const container = overlay.querySelector('.skeleton-container')
                 if (container) container.innerHTML = ''
                 hideTimeout = null

@@ -19,10 +19,12 @@ import { normalizeTrackRecord } from '../../utils/track-record.js'
 import { sessionService } from '../../services/session-service.js'
 import { audioService } from '../../services/audio-service.js'
 import { isRouteActive } from '../../utils/route.js'
+import { playerState } from '../../state/player-state.js'
 
 const PLAYLIST_TRACK_ROW_HEIGHT = 60
 const PLAYLIST_TRACK_OVERSCAN = 12
 const PLAYLIST_VIRTUAL_ROW_CACHE_LIMIT = 240
+const PLAYLIST_SKELETON_TEST_DELAY_MS = 250
 
 export function initializePlaylistPage() {
     const title = document.getElementById('playlistTitle')
@@ -68,6 +70,7 @@ export function initializePlaylistPage() {
     let pendingDurationCellsRunId = null
     const pendingDurationCellIndexes = new Set()
     const virtualRowCache = new Map()
+    let playbackSnapshot = playerState.getState()
 
     function getAppScrollElement() {
         return window.appScrollElement || document.getElementById('app-scroll') || window
@@ -291,6 +294,81 @@ export function initializePlaylistPage() {
 
     function getActivePlaylist() {
         return playlists.find((playlist) => playlist.id === activePlaylistId) || null
+    }
+
+    function getTrackFilePath(track) {
+        if (typeof track === 'string') {
+            return track.trim()
+        }
+
+        return typeof track?.filePath === 'string' ? track.filePath.trim() : ''
+    }
+
+    function findQueueStartIndex(playlistPaths, playbackQueue) {
+        if (
+            !playlistPaths.length ||
+            !playbackQueue.length ||
+            playbackQueue.length > playlistPaths.length
+        ) {
+            return -1
+        }
+
+        const normalizedQueue = playbackQueue.map(getTrackFilePath)
+
+        for (let start = 0; start <= playlistPaths.length - normalizedQueue.length; start++) {
+            const isMatch = normalizedQueue.every((filePath, offset) => {
+                return filePath && filePath === playlistPaths[start + offset]
+            })
+
+            if (isMatch) {
+                return start
+            }
+        }
+
+        return -1
+    }
+
+    function getNowPlayingTrackIndex(activePlaylist = getActivePlaylist()) {
+        const tracks = Array.isArray(activePlaylist?.tracks) ? activePlaylist.tracks : []
+        const playbackQueue = Array.isArray(playbackSnapshot?.playlist)
+            ? playbackSnapshot.playlist
+            : []
+        const currentTrackIndex = Number.isInteger(playbackSnapshot?.currentTrackIndex)
+            ? playbackSnapshot.currentTrackIndex
+            : -1
+
+        if (!tracks.length || !playbackQueue.length || currentTrackIndex < 0) {
+            return -1
+        }
+
+        if (currentTrackIndex >= playbackQueue.length) {
+            return -1
+        }
+
+        const playlistPaths = tracks.map(getTrackFilePath)
+        const queueStartIndex = findQueueStartIndex(playlistPaths, playbackQueue)
+
+        if (queueStartIndex < 0) {
+            return -1
+        }
+
+        return queueStartIndex + currentTrackIndex
+    }
+
+    function applyNowPlayingHighlight() {
+        const nowPlayingTrackIndex = getNowPlayingTrackIndex()
+
+        body.querySelectorAll('.playlistTrackRow').forEach((row) => {
+            const rowTrackIndex = getDataAttributeIndex(row, 'data-track-index')
+            const isNowPlaying = rowTrackIndex !== null && rowTrackIndex === nowPlayingTrackIndex
+
+            row.classList.toggle('isNowPlaying', isNowPlaying)
+            if (isNowPlaying) {
+                row.setAttribute('aria-current', 'true')
+            } else {
+                row.removeAttribute('aria-current')
+            }
+        })
     }
 
     function setActivePlaylistState(nextActivePlaylistId) {
@@ -694,6 +772,7 @@ export function initializePlaylistPage() {
             td.textContent = 'No tracks in this playlist yet.'
             tr.appendChild(td)
             body.appendChild(tr)
+            applyNowPlayingHighlight()
             if (virtualizer && typeof virtualizer.setOptions === 'function') {
                 virtualizer.setOptions({
                     ...virtualizer.options,
@@ -825,6 +904,8 @@ export function initializePlaylistPage() {
             applyRowDecorations(renderedRows)
         }
 
+        applyNowPlayingHighlight()
+
         if (reason !== 'virtual-change') {
             attachTrackActionHandlers()
             initializeSortableIfNeeded()
@@ -901,6 +982,10 @@ export function initializePlaylistPage() {
 
             // window.loader?.setMessage('Finalizing...')
 
+            if (PLAYLIST_SKELETON_TEST_DELAY_MS > 0) {
+                await new Promise((resolve) => setTimeout(resolve, PLAYLIST_SKELETON_TEST_DELAY_MS))
+            }
+
             window.loader?.hide()
         } catch (err) {
             console.error(err)
@@ -963,6 +1048,10 @@ export function initializePlaylistPage() {
             hydrate()
         }
     }
+    const unsubscribePlayerState = playerState.subscribe((snapshot) => {
+        playbackSnapshot = snapshot
+        applyNowPlayingHighlight()
+    })
     window.addEventListener('user-playlists:updated', onPlaylistsUpdated)
     // Attach global undo shortcut for this page (Ctrl+Z)
     attachUndoShortcut()
@@ -971,6 +1060,9 @@ export function initializePlaylistPage() {
     const cleanup = () => {
         totalDurationRunId += 1
         cancelPendingDurationCellUpdates()
+        if (typeof unsubscribePlayerState === 'function') {
+            unsubscribePlayerState()
+        }
         window.removeEventListener('user-playlists:updated', onPlaylistsUpdated)
         window.removeEventListener('resize', invalidatePlaylistScrollMargin)
         image.removeEventListener('load', invalidatePlaylistScrollMargin)

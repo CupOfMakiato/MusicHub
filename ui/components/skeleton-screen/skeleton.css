@@ -135,6 +135,23 @@
     }
 }
 
+#loadingOverlay.loading-overlay-playlist {
+    inset: var(--skeleton-overlay-top, 0) var(--skeleton-overlay-right, 0)
+        var(--skeleton-overlay-bottom, var(--bottom-player-height, 92px))
+        var(--skeleton-overlay-left, 0);
+    width: auto;
+    height: auto;
+    justify-content: flex-start;
+    padding: 8px;
+    overflow-y: auto;
+}
+
+#loadingOverlay.loading-overlay-playlist .skeleton-container.skeleton-table {
+    max-width: none;
+    padding: 16px;
+    box-sizing: border-box;
+}
+
 /* Playlist (table-like) skeleton */
 .skeleton-table {
     width: 100%;
@@ -143,33 +160,89 @@
     gap: 0;
 }
 
-.skeleton-table-row {
-    display: grid;
-    grid-template-columns: 56px 1fr 160px 160px 120px 80px 48px;
-    align-items: center;
-    gap: 8px;
-    height: 60px;
-    padding: 0 5px;
+.skeleton-track-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+
+.skeleton-track-table thead {
+    background: #f8fafc;
+}
+
+.skeleton-track-table th {
+    padding: 10px;
     border-bottom: 1px solid #edf1f5;
+    text-align: center;
+    font-size: 13px;
     box-sizing: border-box;
 }
 
-.skeleton-cell {
-    display: flex;
-    align-items: center;
+.skeleton-track-table td {
+    height: 60px;
+    padding: 0 5px;
+    border-bottom: 1px solid #edf1f5;
+    text-align: center;
+    font-size: 13px;
+    box-sizing: border-box;
+    overflow: hidden;
+    vertical-align: middle;
 }
 
-.skeleton-col-index .skeleton-line {
-    width: 28px;
+.skeleton-track-table th:first-child,
+.skeleton-track-table td.skeleton-col-index {
+    width: 56px;
+}
+
+.skeleton-track-table th:last-child,
+.skeleton-track-table td.skeleton-col-actions {
+    width: 48px;
+}
+
+.skeleton-track-table td.skeleton-col-actions {
+    overflow: visible;
+    position: relative;
+}
+
+.skeleton-track-table th:nth-child(2),
+.skeleton-track-table td.skeleton-col-title {
+    text-align: left;
+}
+
+.skeleton-table-row {
+    height: 60px;
+}
+
+.skeleton-heading-line,
+.skeleton-heading-subline {
+    height: 13px;
+    border-radius: 4px;
+    margin: 0 auto;
+}
+
+.skeleton-heading-subline {
     height: 12px;
+    margin-top: 2px;
 }
 
-.skeleton-col-title {
+.skeleton-track-table th:nth-child(2) .skeleton-heading-line {
+    margin-left: 0;
+}
+
+.skeleton-index-button {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    margin: 0 auto;
+}
+
+.skeleton-track-title-wrap {
     display: flex;
     align-items: center;
     gap: 10px;
     min-width: 0;
 }
+
 .skeleton-track-cover {
     width: 38px;
     height: 38px;
@@ -177,40 +250,37 @@
     background: var(--skeleton-bg);
     flex-shrink: 0;
 }
-.skeleton-track-lines {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-}
-.skeleton-track-lines .skeleton-line:nth-child(1) {
+
+.skeleton-track-title-line {
     width: 60%;
-    height: 12px;
-}
-.skeleton-track-lines .skeleton-line:nth-child(2) {
-    width: 40%;
-    height: 10px;
+    max-width: 240px;
+    height: 13px;
+    border-radius: 4px;
 }
 
 .skeleton-col-artist .skeleton-line,
-.skeleton-col-album .skeleton-line {
-    width: 100%;
-    max-width: 160px;
-}
+.skeleton-col-album .skeleton-line,
 .skeleton-col-date .skeleton-line {
-    width: 100%;
-    max-width: 120px;
-}
-.skeleton-col-duration .skeleton-line {
-    width: 48px;
-}
-.skeleton-col-actions .skeleton-line {
-    width: 28px;
-    height: 28px;
-    border-radius: 6px;
+    width: 70%;
+    max-width: 140px;
+    height: 13px;
+    margin: 0 auto;
 }
 
-/* Header / banner skeleton to mirror playlist header */
+.skeleton-col-duration .skeleton-line {
+    width: 48px;
+    height: 13px;
+    margin: 0 auto;
+}
+
+.skeleton-actions-button {
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    margin: 0 auto;
+}
+
+/* Header skeleton to mirror playlist header */
 .skeleton-header-card {
     width: 100%;
     border: 1px solid #d8dee8;
@@ -218,11 +288,6 @@
     overflow: hidden;
     background: #ffffff;
     box-sizing: border-box;
-}
-
-.skeleton-banner {
-    width: 100%;
-    height: 120px;
 }
 
 .skeleton-header-body {
