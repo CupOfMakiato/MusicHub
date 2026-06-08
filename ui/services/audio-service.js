@@ -10,7 +10,9 @@ export const audioService = (() => {
     const UNKNOWN_ALBUM_LABEL = 'Unknown Album'
     const Howl = window.Howl
     const Howler = window.Howler
+    const METADATA_CACHE_LIMIT = 240
     const metadataCache = new Map()
+    const artworkCache = new Map()
     const metadataInFlight = new Map()
 
     let currentSound = null
@@ -74,7 +76,44 @@ export const audioService = (() => {
     //     })
     // }
 
-    async function readMetadata(filePath, fallbackTitle) {
+    function rememberMetadata(filePath, metadata) {
+        if (metadataCache.has(filePath)) {
+            metadataCache.delete(filePath)
+        }
+
+        metadataCache.set(filePath, {
+            ...metadata,
+            image: null,
+        })
+
+        if (metadataCache.size <= METADATA_CACHE_LIMIT) {
+            return
+        }
+
+        const oldestKey = metadataCache.keys().next().value
+        if (oldestKey) {
+            metadataCache.delete(oldestKey)
+        }
+    }
+
+    function rememberArtwork(filePath, image) {
+        if (artworkCache.has(filePath)) {
+            artworkCache.delete(filePath)
+        }
+
+        artworkCache.set(filePath, image || '')
+
+        if (artworkCache.size <= METADATA_CACHE_LIMIT) {
+            return
+        }
+
+        const oldestKey = artworkCache.keys().next().value
+        if (oldestKey) {
+            artworkCache.delete(oldestKey)
+        }
+    }
+
+    async function readMetadata(filePath, fallbackTitle, { includeImage = false } = {}) {
         if (!window.electronAPI?.readAudioMetadata) {
             logMetadataDebug(filePath, 'metadata-api-missing', {
                 fallbackTitle,
@@ -83,7 +122,7 @@ export const audioService = (() => {
         }
 
         try {
-            const rawTags = await window.electronAPI.readAudioMetadata(filePath)
+            const rawTags = await window.electronAPI.readAudioMetadata(filePath, { includeImage })
 
             if (!rawTags) {
                 logMetadataDebug(filePath, 'metadata-empty', {
@@ -121,6 +160,11 @@ export const audioService = (() => {
             ? Number(positionOverride)
             : Number(currentSound?.seek?.() || 0)
 
+        if (typeof sessionService.savePlaybackPosition === 'function') {
+            sessionService.savePlaybackPosition(currentTrackIndex, Math.max(0, position))
+            return
+        }
+
         sessionService.savePlaylist(playlist, currentTrackIndex, Math.max(0, position))
     }
 
@@ -131,39 +175,51 @@ export const audioService = (() => {
         }, 1000)
     }
 
-    async function resolveTrackMetadata(filePath) {
+    async function resolveTrackMetadata(filePath, options = {}) {
         if (!filePath) {
             return buildFallbackTrackData(filePath)
         }
 
-        if (metadataCache.has(filePath)) {
+        const includeImage = options.includeImage === true
+        if (!includeImage && metadataCache.has(filePath)) {
             return metadataCache.get(filePath)
         }
 
-        if (metadataInFlight.has(filePath)) {
-            return metadataInFlight.get(filePath)
+        if (includeImage && artworkCache.has(filePath)) {
+            return {
+                ...(metadataCache.get(filePath) || buildFallbackTrackData(filePath)),
+                image: artworkCache.get(filePath) || null,
+            }
+        }
+
+        const cacheKey = `${includeImage ? 'image' : 'text'}:${filePath}`
+        if (metadataInFlight.has(cacheKey)) {
+            return metadataInFlight.get(cacheKey)
         }
 
         const fallback = buildFallbackTrackData(filePath)
-        const metadataPromise = readMetadata(filePath, fallback.title)
+        const metadataPromise = readMetadata(filePath, fallback.title, { includeImage })
             .then((metadata) => {
                 const safeMetadata = {
                     title: metadata?.title || fallback.title,
                     artist: metadata?.artist || fallback.artist,
                     album: metadata?.album || fallback.album,
-                    image: metadata?.image || null,
+                    image: includeImage ? metadata?.image || null : null,
                 }
-                metadataCache.set(filePath, safeMetadata)
-                metadataInFlight.delete(filePath)
+                rememberMetadata(filePath, safeMetadata)
+                if (includeImage) {
+                    rememberArtwork(filePath, safeMetadata.image)
+                }
+                metadataInFlight.delete(cacheKey)
                 return safeMetadata
             })
             .catch((error) => {
-                metadataInFlight.delete(filePath)
+                metadataInFlight.delete(cacheKey)
                 logMetadataDebug(filePath, 'metadata-cache-error', { error: String(error) })
                 return fallback
             })
 
-        metadataInFlight.set(filePath, metadataPromise)
+        metadataInFlight.set(cacheKey, metadataPromise)
         return metadataPromise
     }
 
@@ -185,7 +241,7 @@ export const audioService = (() => {
             return
         }
 
-        resolveTrackMetadata(nextFilePath).catch(() => {
+        resolveTrackMetadata(nextFilePath, { includeImage: false }).catch(() => {
             // Ignore prewarm failures; playback should not be blocked by metadata.
         })
     }
@@ -306,7 +362,7 @@ export const audioService = (() => {
 
         // Resolve rich metadata in background so playback is not blocked by file reads/decoding.
         const expectedFilePath = filePath
-        resolveTrackMetadata(filePath)
+        resolveTrackMetadata(filePath, { includeImage: true })
             .then((trackData) => {
                 const { playlist: latestPlaylist, currentTrackIndex } = state.getState()
                 const isSameTrack =

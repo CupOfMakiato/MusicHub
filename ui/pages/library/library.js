@@ -8,6 +8,7 @@ import { resolvePlaylistImage, extractPlaylistFilePaths } from '../../utils/play
 import { sessionService } from '../../services/session-service.js'
 import { audioService } from '../../services/audio-service.js'
 import { isRouteActive } from '../../utils/route.js'
+import { hydrateImageWithPlaylistArtwork } from '../../utils/artwork.js'
 
 export function initializeLibraryPage() {
     const container = document.getElementById('libraryPlaylists')
@@ -182,6 +183,21 @@ export function initializeLibraryPage() {
         bindImageFallbacks({
             scope: container,
             selector: '.libraryPlaylistCard img',
+        })
+
+        container.querySelectorAll('.libraryPlaylistCard').forEach((card) => {
+            const playlistId = card.getAttribute('data-playlist-id')
+            const playlist = playlists.find((item) => item.id === playlistId)
+            const imageElement = card.querySelector('img')
+            if (!playlist || !imageElement) {
+                return
+            }
+
+            hydrateImageWithPlaylistArtwork({
+                imageElement,
+                playlist,
+                audioService,
+            }).catch(() => {})
         })
 
         window.lucide?.createIcons()

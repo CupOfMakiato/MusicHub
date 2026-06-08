@@ -39,12 +39,14 @@ export function initializePlayer() {
     const trackPropertiesBtn = bottomPlayer.querySelector('#trackPropertiesBtn')
     const placeholderCover = audioService?.placeholderCover || './assets/music-placeholder.png'
     let progressRafId = null
+    let latestSnapshot = playerState.getState()
 
     console.log('Player DOM elements found')
 
-    function updatePlayerUI() {
+    function updatePlayerUI(snapshot = latestSnapshot) {
         // console.log('updatePlayerUI triggered');
-        const { currentTrack, isPlaying, volume } = playerState.getState()
+        latestSnapshot = snapshot || latestSnapshot
+        const { currentTrack, isPlaying, volume } = latestSnapshot
         const title = currentTrack?.title || 'No song selected'
         const artist = currentTrack?.artist || 'Unknown artist'
         const image = currentTrack?.image || placeholderCover
@@ -334,7 +336,9 @@ export function initializePlayer() {
 
         if (filePath && typeof window.electronAPI?.readAudioMetadata === 'function') {
             try {
-                rawMetadata = await window.electronAPI.readAudioMetadata(filePath)
+                rawMetadata = await window.electronAPI.readAudioMetadata(filePath, {
+                    includeImage: false,
+                })
             } catch (error) {
                 metadataError = error?.message || String(error)
             }
@@ -442,7 +446,7 @@ export function initializePlayer() {
 
         function updateProgress() {
             const sound = audioService.getCurrentSound()
-            const { isPlaying } = playerState.getState()
+            const isPlaying = Boolean(latestSnapshot?.isPlaying)
 
             if (!sound || !isPlaying) {
                 stopProgressLoop()
@@ -464,7 +468,7 @@ export function initializePlayer() {
             }
 
             const sound = audioService.getCurrentSound()
-            const { isPlaying } = playerState.getState()
+            const isPlaying = Boolean(latestSnapshot?.isPlaying)
             if (!sound || !isPlaying) {
                 return
             }
@@ -472,11 +476,12 @@ export function initializePlayer() {
             progressRafId = requestAnimationFrame(updateProgress)
         }
 
-        const unsubscribe = playerState.subscribe(() => {
-            updatePlayerUI()
+        const unsubscribe = playerState.subscribe((snapshot) => {
+            latestSnapshot = snapshot
+            updatePlayerUI(snapshot)
 
             const sound = audioService.getCurrentSound()
-            const { isPlaying } = playerState.getState()
+            const isPlaying = Boolean(snapshot?.isPlaying)
             if (sound && isPlaying) {
                 startProgressLoop()
             } else {

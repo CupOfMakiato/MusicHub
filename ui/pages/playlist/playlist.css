@@ -165,6 +165,25 @@
     position: relative;
     z-index: 1;
     height: 60px;
+    cursor:
+        url('../../assets/cursor-drag.png') 10 10,
+        grab;
+}
+
+.playlistTrackRow--dragging,
+.playlistTrackRow--fallbackDragging,
+.playlistTrackRow.sortable-chosen,
+.playlistTrackRow.sortable-drag {
+    cursor:
+        url('../../assets/cursor-drag-clicked.png') 10 10,
+        grabbing !important;
+}
+
+.playlistTrackRow--fallbackDragging,
+.sortable-fallback {
+    cursor:
+        url('../../assets/cursor-drag-clicked.png') 10 10,
+        grabbing !important;
 }
 
 /* .playlistTrackRow.isNowPlaying tr {

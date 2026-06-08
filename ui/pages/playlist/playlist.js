@@ -14,8 +14,17 @@ import { pushUndo, attachUndoShortcut, detachUndoShortcut } from '../../services
 //formatDate in rowrederer
 import { formatDurationClock, formatDurationVerbose } from '../../utils/duration.js'
 import { toFileUrl } from '../../utils/file-path.js'
-import { resolvePlaylistImage, extractPlaylistFilePaths } from '../../utils/playlist-media.js'
+import {
+    DEFAULT_PLAYLIST_IMAGE,
+    normalizePlaylistImageValue,
+    resolvePlaylistImage,
+    extractPlaylistFilePaths,
+} from '../../utils/playlist-media.js'
 import { normalizeTrackRecord } from '../../utils/track-record.js'
+import {
+    hydrateImageWithPlaylistArtwork,
+    hydrateImageWithTrackArtwork,
+} from '../../utils/artwork.js'
 import { sessionService } from '../../services/session-service.js'
 import { audioService } from '../../services/audio-service.js'
 import { isRouteActive } from '../../utils/route.js'
@@ -24,6 +33,7 @@ import { playerState } from '../../state/player-state.js'
 const PLAYLIST_TRACK_ROW_HEIGHT = 60
 const PLAYLIST_TRACK_OVERSCAN = 12
 const PLAYLIST_VIRTUAL_ROW_CACHE_LIMIT = 240
+const PLAYLIST_DURATION_WORKERS = 4
 const PLAYLIST_SKELETON_TEST_DELAY_MS = 250
 
 export function initializePlaylistPage() {
@@ -60,6 +70,7 @@ export function initializePlaylistPage() {
     let sortableInstance = null
     let isSavingPlaylistOrder = false
     let isSavingPlaylistImage = false
+    let isSavingPlaylistCover = false
     let cachedScrollMargin = null
     let playlistLayoutResizeObserver = null
     let trackActionsDelegated = false
@@ -70,6 +81,8 @@ export function initializePlaylistPage() {
     let pendingDurationCellsRunId = null
     const pendingDurationCellIndexes = new Set()
     const virtualRowCache = new Map()
+    const playlistCoverSaveInFlight = new Set()
+    let renderedTrackIndexes = new Set()
     let playbackSnapshot = playerState.getState()
 
     function getAppScrollElement() {
@@ -276,9 +289,9 @@ export function initializePlaylistPage() {
         durationElement.textContent = ', ...'
         const runId = ++totalDurationRunId
         const durations = await resolveTrackDurationsLimited(activePlaylist.tracks, {
-            concurrency: 8,
+            concurrency: PLAYLIST_DURATION_WORKERS,
             onResolved: (resolvedTrack) => {
-                if (runId === totalDurationRunId) {
+                if (runId === totalDurationRunId && renderedTrackIndexes.has(resolvedTrack.index)) {
                     scheduleDurationCellUpdate(resolvedTrack.index, runId)
                 }
             },
@@ -529,7 +542,10 @@ export function initializePlaylistPage() {
                         const saved = await sessionService.saveUserPlaylists(updatedPlaylists)
                         if (!saved) {
                             console.error('Failed to save reordered playlist')
-                            render()
+                            render({
+                                skipPlaylistArtworkHydration: true,
+                                skipTotalDuration: true,
+                            })
                             return
                         }
 
@@ -549,7 +565,10 @@ export function initializePlaylistPage() {
                                     setActivePlaylistState(
                                         getActivePlaylist()?.id || activePlaylistId,
                                     )
-                                    render()
+                                    render({
+                                        skipPlaylistArtworkHydration: true,
+                                        skipTotalDuration: true,
+                                    })
                                 } catch (err) {
                                     console.error('Error while undoing playlist reorder', err)
                                 } finally {
@@ -561,10 +580,16 @@ export function initializePlaylistPage() {
 
                         playlists = updatedPlaylists
                         setActivePlaylistState(getActivePlaylist()?.id || activePlaylistId)
-                        render()
+                        render({
+                            skipPlaylistArtworkHydration: true,
+                            skipTotalDuration: true,
+                        })
                     } catch (e) {
                         console.error('Failed to save reordered playlist', e)
-                        render()
+                        render({
+                            skipPlaylistArtworkHydration: true,
+                            skipTotalDuration: true,
+                        })
                         return
                     } finally {
                         isSavingPlaylistOrder = false
@@ -653,6 +678,50 @@ export function initializePlaylistPage() {
         })
     }
 
+    function rememberActivePlaylistTrackArtwork(trackIndex, artwork) {
+        const activePlaylist = getActivePlaylist()
+        if (!activePlaylist || !Array.isArray(activePlaylist.tracks) || !artwork) {
+            return
+        }
+
+        const track = activePlaylist.tracks[trackIndex]
+        const normalizedTrack = normalizeTrackRecord(track)
+        if (!normalizedTrack?.filePath) {
+            return
+        }
+
+        activePlaylist.tracks[trackIndex] = {
+            ...normalizedTrack,
+            image: artwork,
+        }
+    }
+
+    function hydrateTrackArtworkRows(rows) {
+        rows.forEach((row) => {
+            const trackIndex = getDataAttributeIndex(row, 'data-track-index')
+            const imageElement = row.querySelector('.playlistTrackCover')
+            const activePlaylist = getActivePlaylist()
+            const track = trackIndex === null ? null : activePlaylist?.tracks?.[trackIndex]
+            if (!track || !imageElement) {
+                return
+            }
+
+            hydrateImageWithTrackArtwork({
+                imageElement,
+                track,
+                audioService,
+            })
+                .then((artwork) => {
+                    if (!artwork) {
+                        return
+                    }
+
+                    rememberActivePlaylistTrackArtwork(trackIndex, artwork)
+                })
+                .catch(() => {})
+        })
+    }
+
     function applyRowDecorations(rows) {
         if (!rows.length) {
             return
@@ -667,6 +736,7 @@ export function initializePlaylistPage() {
                 selector: '.playlistTrackCover',
             })
         })
+        hydrateTrackArtworkRows(rows)
     }
 
     function resetVirtualRows() {
@@ -763,6 +833,7 @@ export function initializePlaylistPage() {
         if (!tracks.length) {
             // Render a single empty-row node instead of string HTML
             resetVirtualRows()
+            renderedTrackIndexes = new Set()
             activeRenderedMode = 'empty'
             body.innerHTML = ''
             const tr = document.createElement('tr')
@@ -866,6 +937,7 @@ export function initializePlaylistPage() {
                 paddingBottomRow = null
             }
 
+            renderedTrackIndexes = renderedIndexes
             trimVirtualRowCache(renderedIndexes)
 
             syncBodyChildren(renderedNodes)
@@ -884,6 +956,7 @@ export function initializePlaylistPage() {
 
             const fragment = document.createDocumentFragment()
             const renderedRows = []
+            const nextRenderedTrackIndexes = new Set()
             for (let i = 0; i < tracks.length; i++) {
                 const track = tracks[i]
                 const normalizedTrack = normalizeTrackRecord(track)
@@ -896,9 +969,11 @@ export function initializePlaylistPage() {
                 })
 
                 renderedRows.push(row)
+                nextRenderedTrackIndexes.add(i)
                 fragment.appendChild(row)
             }
 
+            renderedTrackIndexes = nextRenderedTrackIndexes
             // replace tbody content with constructed fragment
             body.replaceChildren(fragment)
             applyRowDecorations(renderedRows)
@@ -912,7 +987,51 @@ export function initializePlaylistPage() {
         }
     }
 
-    function renderHeader(activePlaylist) {
+    async function persistPlaylistCoverIfMissing(playlistId, artwork) {
+        const cover = normalizePlaylistImageValue(artwork)
+        if (
+            !playlistId ||
+            !cover ||
+            cover === DEFAULT_PLAYLIST_IMAGE ||
+            playlistCoverSaveInFlight.has(playlistId)
+        ) {
+            return
+        }
+
+        const targetPlaylist = playlists.find((playlist) => playlist.id === playlistId)
+        if (
+            !targetPlaylist ||
+            normalizePlaylistImageValue(targetPlaylist.banner) ||
+            normalizePlaylistImageValue(targetPlaylist.cover)
+        ) {
+            return
+        }
+
+        const updatedPlaylists = playlists.map((playlist) =>
+            playlist.id === playlistId
+                ? {
+                      ...playlist,
+                      cover,
+                  }
+                : playlist,
+        )
+
+        playlistCoverSaveInFlight.add(playlistId)
+        isSavingPlaylistCover = true
+        try {
+            const saved = await sessionService.saveUserPlaylists(updatedPlaylists)
+            if (saved) {
+                playlists = updatedPlaylists
+            }
+        } catch (error) {
+            console.error('Failed to save generated playlist cover', error)
+        } finally {
+            isSavingPlaylistCover = false
+            playlistCoverSaveInFlight.delete(playlistId)
+        }
+    }
+
+    function renderHeader(activePlaylist, { hydrateArtwork = true } = {}) {
         const renderHeaderIcon = () => {
             window.lucide?.createIcons({ nodes: [imageEditButton] })
         }
@@ -936,14 +1055,30 @@ export function initializePlaylistPage() {
 
         bindImageFallback(image)
         image.src = playlistImage
+        if (hydrateArtwork) {
+            hydrateImageWithPlaylistArtwork({
+                imageElement: image,
+                playlist: activePlaylist,
+                audioService,
+            })
+                .then((artwork) => {
+                    persistPlaylistCoverIfMissing(activePlaylist.id, artwork).catch(() => {})
+                })
+                .catch(() => {})
+        }
         renderHeaderIcon()
     }
 
-    function render() {
+    function render({ skipPlaylistArtworkHydration = false, skipTotalDuration = false } = {}) {
         const activePlaylist = getActivePlaylist()
-        renderHeader(activePlaylist)
+        renderHeader(activePlaylist, { hydrateArtwork: !skipPlaylistArtworkHydration })
         renderTracks(activePlaylist, 'route-render')
-        renderTotalDuration(activePlaylist)
+        if (skipTotalDuration) {
+            totalDurationRunId += 1
+            cancelPendingDurationCellUpdates()
+        } else {
+            renderTotalDuration(activePlaylist)
+        }
         renderPlayButtonIcon()
     }
 
@@ -1043,7 +1178,7 @@ export function initializePlaylistPage() {
     })
 
     const onPlaylistsUpdated = () => {
-        if (isSavingPlaylistOrder || isSavingPlaylistImage) return
+        if (isSavingPlaylistOrder || isSavingPlaylistImage || isSavingPlaylistCover) return
         if (isRouteActive(['playlist', 'queue'])) {
             hydrate()
         }

@@ -10,6 +10,10 @@ import {
 import { sessionService } from '../../services/session-service.js'
 import { audioService } from '../../services/audio-service.js'
 import { isRouteActive } from '../../utils/route.js'
+import {
+    hydrateImageWithPlaylistArtwork,
+    hydrateImageWithTrackArtwork,
+} from '../../utils/artwork.js'
 import * as RecentRenderer from './recent-renderer.js'
 import * as RecentModals from './recent-modals.js'
 import * as RecentMetadata from './recent-metadata.js'
@@ -384,6 +388,47 @@ export function initializeRecentMusic() {
         })
     }
 
+    function hydrateRecentArtwork(scope) {
+        scope.querySelectorAll('.recentTrack').forEach((trackElement) => {
+            const index = getDataAttributeIndex(trackElement, 'data-track-index')
+            const imageElement = trackElement.querySelector('.trackCover img')
+            const track = index === null ? null : recentTracks[index]
+            if (!track || !imageElement) {
+                return
+            }
+
+            hydrateImageWithTrackArtwork({
+                imageElement,
+                track,
+                audioService,
+            })
+                .then((artwork) => {
+                    if (artwork && recentTracks[index]) {
+                        recentTracks[index] = {
+                            ...recentTracks[index],
+                            image: artwork,
+                        }
+                    }
+                })
+                .catch(() => {})
+        })
+
+        scope.querySelectorAll('.recentPlaylistCard').forEach((playlistElement) => {
+            const index = getDataAttributeIndex(playlistElement, 'data-playlist-index')
+            const imageElement = playlistElement.querySelector('.recentPlaylistCover')
+            const playlist = index === null ? null : recentFolderPlaylists[index]
+            if (!playlist || !imageElement) {
+                return
+            }
+
+            hydrateImageWithPlaylistArtwork({
+                imageElement,
+                playlist,
+                audioService,
+            }).catch(() => {})
+        })
+    }
+
     function renderRecentContent() {
         const contentContainer = recentMusic.querySelector('.recentTabContent')
         if (!contentContainer) {
@@ -409,6 +454,8 @@ export function initializeRecentMusic() {
             scope: contentContainer,
             selector: '.recentPlaylistCover',
         })
+
+        hydrateRecentArtwork(contentContainer)
 
         window.lucide?.createIcons()
 

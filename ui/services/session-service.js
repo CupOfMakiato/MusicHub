@@ -1,4 +1,5 @@
 import { getBaseName } from '../utils/file-path.js'
+import { normalizePlaylistImageValue, resolveTrackImage } from '../utils/playlist-media.js'
 import { normalizeTrackRecord } from '../utils/track-record.js'
 
 export const sessionService = (() => {
@@ -9,6 +10,17 @@ export const sessionService = (() => {
     const USER_PLAYLISTS_KEY = 'musichub:user-playlists'
     //storing data under C:\Users\<user>\AppData\Roaming\Blueberry Music Player\
     const RECENT_FOLDER_PLAYLISTS_KEY = 'musichub:recent-folder-playlists'
+    const EMBEDDED_IMAGE_PREFIX = 'data:image/'
+
+    function compactStorageValue(key, normalized) {
+        window.setTimeout(() => {
+            try {
+                window.localStorage.setItem(key, JSON.stringify(normalized))
+            } catch (error) {
+                console.error('Failed to compact stored playlist data:', error)
+            }
+        }, 0)
+    }
 
     function normalizeRecentFolderPlaylistTracks(tracks) {
         if (!Array.isArray(tracks)) {
@@ -27,6 +39,27 @@ export const sessionService = (() => {
                 return true
             })
             .slice(0, MAX_RECENT_FOLDER_TRACKS)
+    }
+
+    function resolveStoredPlaylistCover(playlist) {
+        return (
+            normalizePlaylistImageValue(playlist?.cover) ||
+            normalizePlaylistImageValue(playlist?.fallbackCover) ||
+            normalizePlaylistImageValue(playlist?.image) ||
+            normalizePlaylistImageValue(playlist?.artwork)
+        )
+    }
+
+    function resolveFirstTrackCover(tracks) {
+        if (!Array.isArray(tracks)) {
+            return ''
+        }
+
+        return (
+            tracks
+                .map((track) => normalizePlaylistImageValue(resolveTrackImage(track)))
+                .find(Boolean) || ''
+        )
     }
 
     function parseIsoDateToNumber(value) {
@@ -52,6 +85,7 @@ export const sessionService = (() => {
                     return null
                 }
 
+                const cover = resolveStoredPlaylistCover(playlist) || resolveFirstTrackCover(tracks)
                 const now = new Date().toISOString()
                 return {
                     id:
@@ -63,6 +97,7 @@ export const sessionService = (() => {
                         typeof playlist?.name === 'string' && playlist.name.trim()
                             ? playlist.name.trim()
                             : getBaseName(folderPath, 'Folder Playlist'),
+                    cover,
                     tracks,
                     createdAt: typeof playlist?.createdAt === 'string' ? playlist.createdAt : now,
                     updatedAt: typeof playlist?.updatedAt === 'string' ? playlist.updatedAt : now,
@@ -158,6 +193,24 @@ export const sessionService = (() => {
         }
     }
 
+    async function savePlaybackPosition(currentTrackIndex, playbackPosition = 0) {
+        if (!hasAPI('savePlaybackPosition')) {
+            return false
+        }
+
+        try {
+            return Boolean(
+                await window.electronAPI.savePlaybackPosition(
+                    Number.isInteger(currentTrackIndex) ? currentTrackIndex : -1,
+                    Math.max(0, Number(playbackPosition) || 0),
+                ),
+            )
+        } catch (error) {
+            console.error('Failed to persist playback position:', error)
+            return false
+        }
+    }
+
     async function loadRecentTracks() {
         if (!hasAPI('loadRecentTracks')) {
             return []
@@ -165,7 +218,9 @@ export const sessionService = (() => {
 
         try {
             const tracks = await window.electronAPI.loadRecentTracks()
-            return Array.isArray(tracks) ? tracks : []
+            return Array.isArray(tracks)
+                ? tracks.map((track) => normalizeTrackRecord(track)).filter(Boolean)
+                : []
         } catch (error) {
             console.error('Failed to load recent tracks:', error)
             return []
@@ -178,7 +233,12 @@ export const sessionService = (() => {
         }
 
         try {
-            const safeTracks = Array.isArray(tracks) ? tracks.slice(0, MAX_RECENT_TRACKS) : []
+            const safeTracks = Array.isArray(tracks)
+                ? tracks
+                      .map((track) => normalizeTrackRecord(track))
+                      .filter(Boolean)
+                      .slice(0, MAX_RECENT_TRACKS)
+                : []
             const saved = await window.electronAPI.saveRecentTracks(safeTracks)
             if (saved) {
                 window.dispatchEvent(new CustomEvent('recent-tracks:updated'))
@@ -217,34 +277,42 @@ export const sessionService = (() => {
         }
     }
 
-    function normalizeUserPlaylists(playlists) {
+    function normalizeUserPlaylists(playlists, { initializeMissingCovers = false } = {}) {
         if (!Array.isArray(playlists)) {
             return []
         }
 
         return playlists
-            .map((playlist) => ({
-                id:
-                    typeof playlist?.id === 'string'
-                        ? playlist.id
-                        : `playlist-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
-                name:
-                    typeof playlist?.name === 'string' && playlist.name.trim()
-                        ? playlist.name.trim()
-                        : 'Untitled Playlist',
-                banner: typeof playlist?.banner === 'string' ? playlist.banner : '',
-                tracks: Array.isArray(playlist?.tracks)
+            .map((playlist) => {
+                const tracks = Array.isArray(playlist?.tracks)
                     ? playlist.tracks.map((track) => normalizeTrackRecord(track)).filter(Boolean)
-                    : [],
-                createdAt:
-                    typeof playlist?.createdAt === 'string'
-                        ? playlist.createdAt
-                        : new Date().toISOString(),
-                updatedAt:
-                    typeof playlist?.updatedAt === 'string'
-                        ? playlist.updatedAt
-                        : new Date().toISOString(),
-            }))
+                    : []
+                const cover =
+                    resolveStoredPlaylistCover(playlist) ||
+                    (initializeMissingCovers ? resolveFirstTrackCover(tracks) : '')
+
+                return {
+                    id:
+                        typeof playlist?.id === 'string'
+                            ? playlist.id
+                            : `playlist-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
+                    name:
+                        typeof playlist?.name === 'string' && playlist.name.trim()
+                            ? playlist.name.trim()
+                            : 'Untitled Playlist',
+                    banner: normalizePlaylistImageValue(playlist?.banner),
+                    cover,
+                    tracks,
+                    createdAt:
+                        typeof playlist?.createdAt === 'string'
+                            ? playlist.createdAt
+                            : new Date().toISOString(),
+                    updatedAt:
+                        typeof playlist?.updatedAt === 'string'
+                            ? playlist.updatedAt
+                            : new Date().toISOString(),
+                }
+            })
             .filter((playlist) => Boolean(playlist.id))
     }
 
@@ -256,7 +324,14 @@ export const sessionService = (() => {
             }
 
             const parsed = JSON.parse(raw)
-            return normalizeUserPlaylists(parsed)
+            const normalized = normalizeUserPlaylists(parsed, { initializeMissingCovers: true })
+            const initializedCovers = normalized.some(
+                (playlist, index) => playlist.cover && !resolveStoredPlaylistCover(parsed[index]),
+            )
+            if (raw.includes(EMBEDDED_IMAGE_PREFIX) || initializedCovers) {
+                compactStorageValue(USER_PLAYLISTS_KEY, normalized)
+            }
+            return normalized
         } catch (error) {
             console.error('Failed to load user playlists:', error)
             return []
@@ -318,6 +393,9 @@ export const sessionService = (() => {
         })
 
         if (appended) {
+            if (!target.banner && !target.cover) {
+                target.cover = resolveFirstTrackCover(target.tracks)
+            }
             target.updatedAt = new Date().toISOString()
         }
 
@@ -327,13 +405,15 @@ export const sessionService = (() => {
     async function createUserPlaylist({ name, banner = '' }) {
         const playlists = await loadUserPlaylists()
         const now = new Date().toISOString()
+        const safeBanner = normalizePlaylistImageValue(banner)
         const newPlaylist = {
             id: `playlist-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
             name:
                 typeof name === 'string' && name.trim()
                     ? name.trim()
                     : `New Playlist ${playlists.length + 1}`,
-            banner: typeof banner === 'string' ? banner.trim() : '',
+            banner: safeBanner,
+            cover: '',
             tracks: [],
             createdAt: now,
             updatedAt: now,
@@ -370,13 +450,15 @@ export const sessionService = (() => {
 
         const playlists = await loadUserPlaylists()
         const now = new Date().toISOString()
+        const safeBanner = normalizePlaylistImageValue(banner)
         const newPlaylist = {
             id: `playlist-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
             name:
                 typeof name === 'string' && name.trim()
                     ? name.trim()
                     : `New Playlist ${playlists.length + 1}`,
-            banner: typeof banner === 'string' ? banner.trim() : '',
+            banner: safeBanner,
+            cover: safeBanner ? '' : resolveFirstTrackCover(uniqueTracks),
             tracks: uniqueTracks,
             createdAt: now,
             updatedAt: now,
@@ -394,7 +476,11 @@ export const sessionService = (() => {
             }
 
             const parsed = JSON.parse(raw)
-            return normalizeRecentFolderPlaylists(parsed)
+            const normalized = normalizeRecentFolderPlaylists(parsed)
+            if (raw.includes(EMBEDDED_IMAGE_PREFIX)) {
+                compactStorageValue(RECENT_FOLDER_PLAYLISTS_KEY, normalized)
+            }
+            return normalized
         } catch (error) {
             console.error('Failed to load recent folder playlists:', error)
             return []
@@ -436,6 +522,7 @@ export const sessionService = (() => {
             ? {
                   ...existing,
                   name: safeName,
+                  cover: existing.cover || resolveFirstTrackCover(normalizedTracks),
                   tracks: normalizedTracks,
                   updatedAt: now,
               }
@@ -443,6 +530,7 @@ export const sessionService = (() => {
                   id: `recent-folder-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
                   folderPath: safeFolderPath,
                   name: safeName,
+                  cover: resolveFirstTrackCover(normalizedTracks),
                   tracks: normalizedTracks,
                   createdAt: now,
                   updatedAt: now,
@@ -462,6 +550,7 @@ export const sessionService = (() => {
         saveVolume,
         loadPlaylist,
         savePlaylist,
+        savePlaybackPosition,
         loadRecentTracks,
         saveRecentTracks,
         prependRecentTrack,

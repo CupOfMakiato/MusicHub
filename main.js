@@ -2,17 +2,25 @@
 
 const path = require('path')
 const fs = require('fs')
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron')
+const crypto = require('crypto')
+const { pathToFileURL } = require('url')
+const { app, BrowserWindow, ipcMain, dialog, shell, nativeImage } = require('electron')
 const jsmediatags = require('jsmediatags')
 const AUDIO_EXTENSIONS = new Set(['.mp3', '.wav'])
 const MAX_AUDIO_FILE_BYTES = Number(process.env.MAX_AUDIO_FILE_BYTES || 100 * 1024 * 1024)
+const MAX_METADATA_IMAGE_BYTES = Number(process.env.MAX_METADATA_IMAGE_BYTES || 5 * 1024 * 1024)
+const MAX_FOLDER_STAT_WORKERS = Number(process.env.MAX_FOLDER_STAT_WORKERS || 32)
+const ARTWORK_THUMBNAIL_SIZE = Number(process.env.ARTWORK_THUMBNAIL_SIZE || 1024)
+const ARTWORK_CACHE_VERSION = 'v2'
 const DEFAULT_VOLUME = 0.7
 let settingsStore = null
 const allowedAudioPaths = new Set()
 const approvedAudioDirectories = new Set()
 let memoryLogInterval = null
 
+// if (process.env.ELECTRON_DISABLE_HARDWARE_ACCELERATION === '1') {
 app.disableHardwareAcceleration()
+// }
 
 function getAppIconPath() {
     const iconCandidates = [
@@ -165,7 +173,69 @@ function normalizeImageMime(format) {
     return `image/${normalized}`
 }
 
-function normalizeMetadataPicture(picture) {
+async function ensureArtworkCacheDirectory() {
+    const directory = path.join(app.getPath('userData'), 'artwork-cache')
+    await fs.promises.mkdir(directory, { recursive: true })
+    return directory
+}
+
+function getArtworkCacheKey({ filePath, stats, pictureFormat }) {
+    return crypto
+        .createHash('sha1')
+        .update(
+            [
+                filePath,
+                Number(stats?.mtimeMs || 0),
+                Number(stats?.size || 0),
+                pictureFormat || '',
+                ARTWORK_THUMBNAIL_SIZE,
+                ARTWORK_CACHE_VERSION,
+            ].join('|'),
+        )
+        .digest('hex')
+}
+
+async function writeArtworkThumbnail({ buffer, filePath, stats, pictureFormat }) {
+    if (!buffer?.length || buffer.length > MAX_METADATA_IMAGE_BYTES) {
+        return null
+    }
+
+    const cacheDirectory = await ensureArtworkCacheDirectory()
+    const cachePath = path.join(
+        cacheDirectory,
+        `${getArtworkCacheKey({ filePath, stats, pictureFormat })}.png`,
+    )
+
+    try {
+        await fs.promises.access(cachePath, fs.constants.R_OK)
+        return pathToFileURL(cachePath).href
+    } catch {
+        // Cache miss; generate below.
+    }
+
+    const sourceImage = nativeImage.createFromBuffer(buffer)
+    if (!sourceImage || sourceImage.isEmpty()) {
+        return null
+    }
+
+    const sourceSize = sourceImage.getSize()
+    const largestSide = Math.max(sourceSize.width || 0, sourceSize.height || 0)
+    if (!largestSide) {
+        return null
+    }
+
+    const scale = Math.min(1, ARTWORK_THUMBNAIL_SIZE / largestSide)
+    const thumbnail = sourceImage.resize({
+        width: Math.max(1, Math.round(sourceSize.width * scale)),
+        height: Math.max(1, Math.round(sourceSize.height * scale)),
+        quality: 'best',
+    })
+
+    await fs.promises.writeFile(cachePath, thumbnail.toPNG())
+    return pathToFileURL(cachePath).href
+}
+
+async function normalizeMetadataPicture(picture, { filePath, stats } = {}) {
     if (!picture?.data) {
         return {
             image: null,
@@ -193,14 +263,48 @@ function normalizeMetadataPicture(picture) {
 
     const pictureFormat = normalizeImageMime(picture.format)
     return {
-        image: `data:${pictureFormat};base64,${buffer.toString('base64')}`,
+        image: await writeArtworkThumbnail({
+            buffer,
+            filePath,
+            stats,
+            pictureFormat,
+        }),
         pictureFormat,
         pictureBytes: buffer.length,
     }
 }
 
-function normalizeAudioMetadataTags(tags = {}) {
-    const picture = normalizeMetadataPicture(tags.picture)
+async function mapWithConcurrency(items, concurrency, mapper) {
+    const results = new Array(items.length)
+    let nextIndex = 0
+    const safeConcurrency = Number.isFinite(Number(concurrency))
+        ? Math.floor(Number(concurrency))
+        : 1
+    const workerCount = Math.min(Math.max(1, safeConcurrency), items.length)
+
+    const workers = Array.from({ length: workerCount }, async () => {
+        while (nextIndex < items.length) {
+            const index = nextIndex
+            nextIndex += 1
+            results[index] = await mapper(items[index], index)
+        }
+    })
+
+    await Promise.all(workers)
+    return results
+}
+
+async function normalizeAudioMetadataTags(
+    tags = {},
+    { includeImage = true, filePath = '', stats = null } = {},
+) {
+    const picture = includeImage
+        ? await normalizeMetadataPicture(tags.picture, { filePath, stats })
+        : {
+              image: null,
+              pictureFormat: null,
+              pictureBytes: 0,
+          }
     const metadata = {
         title: normalizeMetadataTagValue(tags.title),
         artist: normalizeMetadataTagValue(tags.artist),
@@ -216,23 +320,36 @@ function normalizeAudioMetadataTags(tags = {}) {
 
     const hasMetadata = Boolean(
         metadata.title ||
-            metadata.artist ||
-            metadata.album ||
-            metadata.year ||
-            metadata.genre ||
-            metadata.track ||
-            metadata.disc ||
-            metadata.image,
+        metadata.artist ||
+        metadata.album ||
+        metadata.year ||
+        metadata.genre ||
+        metadata.track ||
+        metadata.disc ||
+        metadata.image,
     )
 
     return hasMetadata ? metadata : null
 }
 
-function readAudioMetadata(filePath) {
+function readAudioMetadata(filePath, options = {}) {
     return new Promise((resolve) => {
         jsmediatags.read(filePath, {
-            onSuccess: (tag) => {
-                resolve(normalizeAudioMetadataTags(tag?.tags || {}))
+            onSuccess: async (tag) => {
+                try {
+                    resolve(
+                        await normalizeAudioMetadataTags(tag?.tags || {}, {
+                            ...options,
+                            filePath,
+                        }),
+                    )
+                } catch (error) {
+                    console.warn('Failed to normalize audio metadata:', {
+                        filePath,
+                        error: String(error?.message || error || 'unknown error'),
+                    })
+                    resolve(null)
+                }
             },
             onError: (error) => {
                 console.warn('Failed to read audio metadata:', {
@@ -285,7 +402,7 @@ const createWindow = () => {
 
     // debug in dev
     win.loadFile('ui/index.html')
-    if (app.isPackaged === false) {
+    if (app.isPackaged === false && process.env.ELECTRON_OPEN_DEVTOOLS !== '0') {
         win.webContents.openDevTools()
     }
     win.on('ready-to-show', () => {
@@ -423,15 +540,15 @@ ipcMain.handle('folder:getAudioFiles', async (event, folderPath) => {
             .filter((entry) => entry.isFile())
             .map((entry) => path.join(folderPath, entry.name))
             .filter((filePath) => AUDIO_EXTENSIONS.has(path.extname(filePath).toLowerCase()))
-        const filesWithDates = await Promise.all(
-            audioPaths.map(async (filePath) => {
+        const filesWithDates = (
+            await mapWithConcurrency(audioPaths, MAX_FOLDER_STAT_WORKERS, async (filePath) => {
                 const stats = await fs.promises.stat(filePath)
                 return {
                     filePath,
                     createdAt: stats.birthtimeMs,
                 }
-            }),
-        )
+            })
+        ).filter(Boolean)
 
         // play files in order they were added to the folder
         const files = filesWithDates
@@ -515,6 +632,36 @@ ipcMain.handle(
             return true
         } catch (error) {
             console.error('Failed to save playlist:', error)
+            return false
+        }
+    },
+)
+
+ipcMain.handle(
+    'playlist:savePlaybackPosition',
+    async (event, { currentTrackIndex, playbackPosition }) => {
+        if (!settingsStore) {
+            return false
+        }
+
+        try {
+            const playlist = settingsStore.get('recentPlaylist', [])
+            const approvedCurrentTrackIndex =
+                Number.isInteger(currentTrackIndex) &&
+                Array.isArray(playlist) &&
+                currentTrackIndex >= 0 &&
+                currentTrackIndex < playlist.length
+                    ? currentTrackIndex
+                    : -1
+
+            settingsStore.set('recentPlaylistIndex', approvedCurrentTrackIndex)
+            settingsStore.set(
+                'recentPlaybackPosition',
+                approvedCurrentTrackIndex >= 0 ? normalizePlaybackPosition(playbackPosition) : 0,
+            )
+            return true
+        } catch (error) {
+            console.error('Failed to save playback position:', error)
             return false
         }
     },
@@ -611,13 +758,28 @@ ipcMain.handle('file:approveRecentAudioPath', async (event, filePath) => {
     }
 })
 
-ipcMain.handle('file:readAudioMetadata', async (event, filePath) => {
+ipcMain.handle('file:readAudioMetadata', async (event, payload) => {
     try {
-        if (!(await getApprovedAudioFileStats(filePath, 'readAudioMetadata'))) {
+        const filePath =
+            typeof payload === 'string'
+                ? payload
+                : typeof payload?.filePath === 'string'
+                  ? payload.filePath
+                  : ''
+        const options =
+            payload && typeof payload === 'object' && typeof payload.options === 'object'
+                ? payload.options
+                : {}
+
+        const stats = await getApprovedAudioFileStats(filePath, 'readAudioMetadata')
+        if (!stats) {
             return null
         }
 
-        return await readAudioMetadata(filePath)
+        return await readAudioMetadata(filePath, {
+            includeImage: options.includeImage !== false,
+            stats,
+        })
     } catch (error) {
         console.error('Failed to read audio metadata:', error)
         return null

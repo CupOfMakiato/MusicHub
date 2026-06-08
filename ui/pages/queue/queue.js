@@ -7,6 +7,9 @@ import {
 } from '../../utils/dom-helpers.js'
 import { DEFAULT_TRACK_TITLE, DEFAULT_TRACK_ARTIST } from '../../utils/track-record.js'
 
+const QUEUE_METADATA_WORKERS = 4
+const QUEUE_UPCOMING_RENDER_LIMIT = 200
+
 export function initializeQueuePage() {
     const nowPlayingList = document.getElementById('queueNowPlaying')
     const upcomingList = document.getElementById('queueUpcoming')
@@ -18,21 +21,32 @@ export function initializeQueuePage() {
     }
 
     const placeholderCover = audioService?.placeholderCover || './assets/music-placeholder.png'
-    let lastRenderKey = ''
+    let lastRenderKey = null
     let renderToken = 0
     let alive = true
 
     function getRenderKey(snapshot) {
         const playlist = Array.isArray(snapshot?.playlist) ? snapshot.playlist : []
         const current = snapshot?.currentTrack || {}
-        return JSON.stringify({
+        return {
             playlist,
             currentTrackIndex: snapshot?.currentTrackIndex,
             currentFilePath: current.filePath || '',
             currentTitle: current.title || '',
             currentArtist: current.artist || '',
             currentImage: current.image || '',
-        })
+        }
+    }
+
+    function areRenderKeysEqual(previous, next) {
+        return (
+            previous?.playlist === next?.playlist &&
+            previous?.currentTrackIndex === next?.currentTrackIndex &&
+            previous?.currentFilePath === next?.currentFilePath &&
+            previous?.currentTitle === next?.currentTitle &&
+            previous?.currentArtist === next?.currentArtist &&
+            previous?.currentImage === next?.currentImage
+        )
     }
 
     function createQueueHint(message) {
@@ -114,26 +128,39 @@ export function initializeQueuePage() {
         }
     }
 
-    async function hydrateMetadata(playlist, token) {
-        const tasks = playlist.map(async (filePath, index) => {
-            if (!filePath) {
-                return
+    async function hydrateMetadata(playlist, token, trackIndexes) {
+        const indexes = Array.isArray(trackIndexes) ? trackIndexes : []
+        let nextIndex = 0
+
+        const worker = async () => {
+            while (alive && token === renderToken && nextIndex < indexes.length) {
+                const index = indexes[nextIndex]
+                nextIndex += 1
+                const filePath = playlist[index]
+
+                if (!filePath) {
+                    continue
+                }
+
+                const metadata = await audioService.resolveTrackMetadata(filePath, {
+                    includeImage: true,
+                })
+                if (!alive || token !== renderToken) {
+                    return
+                }
+
+                updateQueueItemAtIndex(index, metadata)
             }
+        }
 
-            const metadata = await audioService.resolveTrackMetadata(filePath)
-            if (!alive || token !== renderToken) {
-                return
-            }
+        const workerCount = Math.min(QUEUE_METADATA_WORKERS, indexes.length)
 
-            updateQueueItemAtIndex(index, metadata)
-        })
-
-        await Promise.all(tasks)
+        await Promise.all(Array.from({ length: workerCount }, () => worker()))
     }
 
     function render(snapshot = playerState.getState()) {
         const renderKey = getRenderKey(snapshot)
-        if (renderKey === lastRenderKey) {
+        if (areRenderKeysEqual(lastRenderKey, renderKey)) {
             return
         }
         lastRenderKey = renderKey
@@ -156,9 +183,17 @@ export function initializeQueuePage() {
 
         const nowPlayingPath = currentTrackIndex >= 0 ? playlist[currentTrackIndex] : null
         const upcomingStart = currentTrackIndex >= 0 ? currentTrackIndex + 1 : 0
-        const upcoming = playlist
-            .map((filePath, index) => ({ filePath, index }))
-            .filter((entry) => entry.index >= upcomingStart)
+        const renderedTrackIndexes = []
+        if (currentTrackIndex >= 0) {
+            renderedTrackIndexes.push(currentTrackIndex)
+        }
+
+        const upcoming = []
+        const upcomingEnd = Math.min(playlist.length, upcomingStart + QUEUE_UPCOMING_RENDER_LIMIT)
+        for (let index = upcomingStart; index < upcomingEnd; index += 1) {
+            upcoming.push({ filePath: playlist[index], index })
+            renderedTrackIndexes.push(index)
+        }
 
         if (nowPlayingPath) {
             const metadata = audioService.getTrackDisplayData(nowPlayingPath)
@@ -221,7 +256,7 @@ export function initializeQueuePage() {
             selector: '.queueCover',
         })
 
-        hydrateMetadata(playlist, token).catch((error) => {
+        hydrateMetadata(playlist, token, renderedTrackIndexes).catch((error) => {
             console.error('Failed to hydrate queue metadata:', error)
         })
     }

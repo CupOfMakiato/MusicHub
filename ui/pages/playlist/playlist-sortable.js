@@ -2,6 +2,7 @@
 
 import Sortable from '../../../node_modules/sortablejs/modular/sortable.esm.js'
 import { getDataAttributeIndex } from '../../utils/dom-helpers.js'
+import { cursorClasses } from '../../utils/cursor-interaction.js'
 
 function isValidTrackIndex(index, tracks) {
     return Number.isInteger(index) && index >= 0 && index < tracks.length
@@ -22,15 +23,23 @@ export function createPlaylistSortable({ body, getActivePlaylist, getPlaylists, 
     if (typeof Sortable !== 'function') return { destroy: () => {} }
 
     let sortable = null
+    const setDraggingCursor = (isDragging) => {
+        document.documentElement?.classList.toggle(cursorClasses.grabbing, Boolean(isDragging))
+        document.body?.classList.toggle(cursorClasses.grabbing, Boolean(isDragging))
+    }
 
     try {
         sortable = Sortable.create(body, {
             animation: 150,
             draggable: 'tr.playlistTrackRow',
             filter: 'button, a, input, textarea, select, .playlistTrackMenu, .playlistTrackActions',
+            forceFallback: true,
+            fallbackClass: 'playlistTrackRow--fallbackDragging',
+            fallbackOnBody: true,
             preventOnFilter: true,
             ghostClass: 'playlistTrackRow--dragging',
             onStart: () => {
+                setDraggingCursor(true)
                 try {
                     const interactive = body.querySelectorAll(
                         '.playlistTrackIndexPlayBtn, .playlistTrackMoreBtn',
@@ -47,6 +56,7 @@ export function createPlaylistSortable({ body, getActivePlaylist, getPlaylists, 
                 }
             },
             onEnd: (evt) => {
+                setDraggingCursor(false)
                 try {
                     try {
                         const interactive = body.querySelectorAll(
@@ -193,6 +203,7 @@ export function createPlaylistSortable({ body, getActivePlaylist, getPlaylists, 
 
     return {
         destroy() {
+            setDraggingCursor(false)
             if (sortable && typeof sortable.destroy === 'function') {
                 try {
                     sortable.destroy()

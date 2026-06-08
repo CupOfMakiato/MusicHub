@@ -9,6 +9,7 @@ import { audioService } from '../../services/audio-service.js'
 
 const VIEW_SONGS_METADATA_DEBUG_ENABLED = false
 const VIEW_SONGS_METADATA_WORKERS = 4
+const VIEW_SONGS_METADATA_CACHE_LIMIT = 240
 
 // Simple in-memory cache for resolved metadata promises keyed by file path.
 const metadataCache = new Map()
@@ -26,6 +27,34 @@ function logViewSongsMetadataDebug(phase, payload = {}) {
         phase,
         ...payload,
     })
+}
+
+function getCachedMetadataPromise(filePath) {
+    if (!metadataCache.has(filePath)) {
+        return null
+    }
+
+    const cached = metadataCache.get(filePath)
+    metadataCache.delete(filePath)
+    metadataCache.set(filePath, cached)
+    return cached
+}
+
+function setCachedMetadataPromise(filePath, fetchPromise) {
+    if (metadataCache.has(filePath)) {
+        metadataCache.delete(filePath)
+    }
+
+    metadataCache.set(filePath, fetchPromise)
+
+    if (metadataCache.size <= VIEW_SONGS_METADATA_CACHE_LIMIT) {
+        return
+    }
+
+    const oldestKey = metadataCache.keys().next().value
+    if (oldestKey) {
+        metadataCache.delete(oldestKey)
+    }
 }
 
 function updateViewSongsTrackRow(modalHost, trackIndex, { title, artist }) {
@@ -115,7 +144,7 @@ export async function hydrateViewSongsMetadata({ playlist, tracks, modalHost, si
 
             try {
                 // Reuse cached promise when available so concurrent requests share work
-                let fetchPromise = metadataCache.get(filePath)
+                let fetchPromise = getCachedMetadataPromise(filePath)
                 if (!fetchPromise) {
                     fetchPromise = (async () => {
                         try {
@@ -124,7 +153,7 @@ export async function hydrateViewSongsMetadata({ playlist, tracks, modalHost, si
                             return null
                         }
                     })()
-                    metadataCache.set(filePath, fetchPromise)
+                    setCachedMetadataPromise(filePath, fetchPromise)
                 }
 
                 const resolvedMetadata = await fetchPromise
@@ -217,16 +246,18 @@ export async function resolvePlaylistTracksMetadata(tracks, { signal } = {}) {
 
             try {
                 // Reuse cached promise when available so concurrent requests share work
-                let fetchPromise = metadataCache.get(filePath)
+                let fetchPromise = getCachedMetadataPromise(filePath)
                 if (!fetchPromise) {
                     fetchPromise = (async () => {
                         try {
-                            return await audioService.resolveTrackMetadata(filePath)
+                            return await audioService.resolveTrackMetadata(filePath, {
+                                includeImage: true,
+                            })
                         } catch {
                             return null
                         }
                     })()
-                    metadataCache.set(filePath, fetchPromise)
+                    setCachedMetadataPromise(filePath, fetchPromise)
                 }
 
                 const resolvedMetadata = await fetchPromise
