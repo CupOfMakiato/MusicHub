@@ -114,6 +114,7 @@
 
 .fade-out {
     opacity: 0;
+    pointer-events: none;
     transition: opacity 300ms ease;
 }
 

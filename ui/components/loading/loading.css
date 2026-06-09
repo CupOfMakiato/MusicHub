@@ -22,3 +22,7 @@
 #loadingText {
     color: #ffffff;
 }
+
+.fade-out {
+    pointer-events: none;
+}

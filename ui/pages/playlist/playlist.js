@@ -10,8 +10,30 @@ import {
     createPlaylistVirtualizer,
     loadPlaylistVirtualCore,
 } from './playlist-virtualizer.js'
+import {
+    clearPlaylistDurationProbePromise,
+    getPlaylistDurationProbePromise,
+    getPlaylistTrackFilePath,
+    getTrackDurationState,
+    isPlaylistDurationPersisting,
+    normalizeDurationValue,
+    primePlaylistDurationCache,
+    rememberPlaylistDuration,
+    schedulePlaylistDurationPersist,
+    setPlaylistDurationProbePromise,
+} from './playlist-duration-cache.js'
+import {
+    clearTrackArtworkResolvePromise,
+    getCachedTrackArtwork,
+    getTrackArtworkResolvePromise,
+    isPlaylistArtworkPersisting,
+    normalizeArtworkValue,
+    primePlaylistArtworkCache,
+    rememberTrackArtwork,
+    schedulePlaylistArtworkPersist,
+    setTrackArtworkResolvePromise,
+} from './playlist-artwork-cache.js'
 import { pushUndo, attachUndoShortcut, detachUndoShortcut } from '../../services/undo-service.js'
-//formatDate in rowrederer
 import { formatDurationClock, formatDurationVerbose } from '../../utils/duration.js'
 import { toFileUrl } from '../../utils/file-path.js'
 import {
@@ -34,7 +56,18 @@ const PLAYLIST_TRACK_ROW_HEIGHT = 60
 const PLAYLIST_TRACK_OVERSCAN = 12
 const PLAYLIST_VIRTUAL_ROW_CACHE_LIMIT = 240
 const PLAYLIST_DURATION_WORKERS = 4
-const PLAYLIST_SKELETON_TEST_DELAY_MS = 250
+
+function waitForPlaylistSkeletonPaint() {
+    if (typeof window.requestAnimationFrame !== 'function') {
+        return new Promise((resolve) => window.setTimeout(resolve, 0))
+    }
+
+    return new Promise((resolve) => {
+        window.requestAnimationFrame(() => {
+            window.setTimeout(resolve, 0)
+        })
+    })
+}
 
 export function initializePlaylistPage() {
     const title = document.getElementById('playlistTitle')
@@ -61,8 +94,6 @@ export function initializePlaylistPage() {
 
     let playlists = []
     let activePlaylistId = window.playlistViewState?.activePlaylistId || null
-    const durationCache = new Map()
-    const durationProbePromises = new Map()
     let totalDurationRunId = 0
     let cleanupTrackActions = null
     let virtualizer = null
@@ -80,8 +111,11 @@ export function initializePlaylistPage() {
     let durationCellsRaf = null
     let pendingDurationCellsRunId = null
     const pendingDurationCellIndexes = new Set()
+    const pendingArtworkRows = new Set()
     const virtualRowCache = new Map()
     const playlistCoverSaveInFlight = new Set()
+    let artworkHydrationHandle = null
+    let artworkHydrationUsesIdleCallback = false
     let renderedTrackIndexes = new Set()
     let playbackSnapshot = playerState.getState()
 
@@ -217,35 +251,38 @@ export function initializePlaylistPage() {
     }
 
     async function resolveTrackDuration(track) {
-        if (typeof track?.duration === 'number' && track.duration > 0) {
-            return track.duration
+        const knownDuration = getTrackDurationState(track)
+        if (knownDuration.known) {
+            return knownDuration.duration
         }
 
-        const filePath = track?.filePath
+        const filePath = getPlaylistTrackFilePath(track)
         if (!filePath) {
             return null
         }
 
-        if (durationCache.has(filePath)) {
-            return durationCache.get(filePath)
-        }
-
-        if (durationProbePromises.has(filePath)) {
-            return durationProbePromises.get(filePath)
+        const existingProbePromise = getPlaylistDurationProbePromise(filePath)
+        if (existingProbePromise) {
+            return existingProbePromise
         }
 
         const probePromise = probeAudioDuration(filePath)
             .then((duration) => {
-                durationCache.set(filePath, duration)
-                durationProbePromises.delete(filePath)
+                rememberPlaylistDuration(filePath, duration)
+                clearPlaylistDurationProbePromise(filePath)
+
+                if (normalizeDurationValue(duration) !== null) {
+                    schedulePlaylistDurationPersist()
+                }
+
                 return duration
             })
             .catch((error) => {
-                durationProbePromises.delete(filePath)
+                clearPlaylistDurationProbePromise(filePath)
                 throw error
             })
 
-        durationProbePromises.set(filePath, probePromise)
+        setPlaylistDurationProbePromise(filePath, probePromise)
 
         return probePromise
     }
@@ -255,21 +292,35 @@ export function initializePlaylistPage() {
             return []
         }
 
-        const results = new Array(tracks.length).fill(null)
-        let nextIndex = 0
-
-        const workers = Array.from({ length: Math.min(concurrency, tracks.length) }, async () => {
-            while (nextIndex < tracks.length) {
-                const index = nextIndex
-                nextIndex += 1
-
-                const duration = await resolveTrackDuration(tracks[index])
-                results[index] = duration
-                onResolved?.({ index, duration })
-
-                await new Promise((resolve) => setTimeout(resolve, 0))
+        const results = tracks.map((track) => getTrackDurationState(track).duration)
+        const unresolvedIndexes = []
+        tracks.forEach((track, index) => {
+            if (!getTrackDurationState(track).known) {
+                unresolvedIndexes.push(index)
             }
         })
+
+        if (!unresolvedIndexes.length) {
+            return results
+        }
+
+        let nextIndex = 0
+
+        const workers = Array.from(
+            { length: Math.min(concurrency, unresolvedIndexes.length) },
+            async () => {
+                while (nextIndex < unresolvedIndexes.length) {
+                    const index = unresolvedIndexes[nextIndex]
+                    nextIndex += 1
+
+                    const duration = await resolveTrackDuration(tracks[index])
+                    results[index] = duration
+                    onResolved?.({ index, duration })
+
+                    await new Promise((resolve) => setTimeout(resolve, 0))
+                }
+            },
+        )
 
         await Promise.all(workers)
         return results
@@ -286,12 +337,34 @@ export function initializePlaylistPage() {
             return
         }
 
+        const knownDurations = activePlaylist.tracks.map((track) => getTrackDurationState(track))
+        if (knownDurations.every((duration) => duration.known)) {
+            totalDurationRunId += 1
+            cancelPendingDurationCellUpdates()
+            const totalSeconds = knownDurations.reduce(
+                (sum, value) => sum + (Number(value.duration) || 0),
+                0,
+            )
+            durationElement.textContent = `, ${formatDurationVerbose(totalSeconds)}`
+            return
+        }
+
         durationElement.textContent = ', ...'
         const runId = ++totalDurationRunId
         const durations = await resolveTrackDurationsLimited(activePlaylist.tracks, {
             concurrency: PLAYLIST_DURATION_WORKERS,
             onResolved: (resolvedTrack) => {
-                if (runId === totalDurationRunId && renderedTrackIndexes.has(resolvedTrack.index)) {
+                if (runId !== totalDurationRunId) {
+                    return
+                }
+
+                rememberActivePlaylistTrackDuration(
+                    activePlaylist.id,
+                    resolvedTrack.index,
+                    resolvedTrack.duration,
+                )
+
+                if (renderedTrackIndexes.has(resolvedTrack.index)) {
                     scheduleDurationCellUpdate(resolvedTrack.index, runId)
                 }
             },
@@ -309,14 +382,6 @@ export function initializePlaylistPage() {
         return playlists.find((playlist) => playlist.id === activePlaylistId) || null
     }
 
-    function getTrackFilePath(track) {
-        if (typeof track === 'string') {
-            return track.trim()
-        }
-
-        return typeof track?.filePath === 'string' ? track.filePath.trim() : ''
-    }
-
     function findQueueStartIndex(playlistPaths, playbackQueue) {
         if (
             !playlistPaths.length ||
@@ -326,7 +391,7 @@ export function initializePlaylistPage() {
             return -1
         }
 
-        const normalizedQueue = playbackQueue.map(getTrackFilePath)
+        const normalizedQueue = playbackQueue.map(getPlaylistTrackFilePath)
 
         for (let start = 0; start <= playlistPaths.length - normalizedQueue.length; start++) {
             const isMatch = normalizedQueue.every((filePath, offset) => {
@@ -358,7 +423,7 @@ export function initializePlaylistPage() {
             return -1
         }
 
-        const playlistPaths = tracks.map(getTrackFilePath)
+        const playlistPaths = tracks.map(getPlaylistTrackFilePath)
         const queueStartIndex = findQueueStartIndex(playlistPaths, playbackQueue)
 
         if (queueStartIndex < 0) {
@@ -531,7 +596,6 @@ export function initializePlaylistPage() {
                 getActivePlaylist,
                 getPlaylists: () => playlists,
                 onReorder: async (updatedPlaylists) => {
-                    // capture previous state for undo
                     const previousPlaylists = playlists.map((p) => ({
                         ...p,
                         tracks: Array.isArray(p.tracks) ? p.tracks.slice() : p.tracks,
@@ -549,7 +613,6 @@ export function initializePlaylistPage() {
                             return
                         }
 
-                        // push undo action (closure uses previousPlaylists)
                         pushUndo(
                             async () => {
                                 isSavingPlaylistOrder = true
@@ -601,19 +664,36 @@ export function initializePlaylistPage() {
         }
     }
 
-    function getTrackDurationFromRecord(track) {
-        if (typeof track?.duration === 'number' && track.duration > 0) {
-            return track.duration
+    function rememberActivePlaylistTrackDuration(playlistId, trackIndex, duration) {
+        const safeDuration = normalizeDurationValue(duration)
+        if (!playlistId || !Number.isInteger(trackIndex) || safeDuration === null) {
+            return
         }
 
-        const filePath =
-            typeof track === 'string'
-                ? track.trim()
-                : typeof track?.filePath === 'string'
-                  ? track.filePath.trim()
-                  : ''
+        const activePlaylist = playlists.find((playlist) => playlist.id === playlistId)
+        const track = activePlaylist?.tracks?.[trackIndex]
+        const filePath = getPlaylistTrackFilePath(track)
+        if (!activePlaylist || !Array.isArray(activePlaylist.tracks) || !filePath) {
+            return
+        }
 
-        return filePath ? durationCache.get(filePath) : null
+        if (normalizeDurationValue(track?.duration) === safeDuration) {
+            return
+        }
+
+        const normalizedTrack = normalizeTrackRecord(track)
+        if (!normalizedTrack || normalizedTrack.filePath !== filePath) {
+            return
+        }
+
+        activePlaylist.tracks[trackIndex] = {
+            ...normalizedTrack,
+            duration: safeDuration,
+        }
+    }
+
+    function getTrackDurationFromRecord(track) {
+        return getTrackDurationState(track).duration
     }
 
     function updateDurationCell(index, duration) {
@@ -680,7 +760,8 @@ export function initializePlaylistPage() {
 
     function rememberActivePlaylistTrackArtwork(trackIndex, artwork) {
         const activePlaylist = getActivePlaylist()
-        if (!activePlaylist || !Array.isArray(activePlaylist.tracks) || !artwork) {
+        const image = normalizeArtworkValue(artwork)
+        if (!activePlaylist || !Array.isArray(activePlaylist.tracks) || !image) {
             return
         }
 
@@ -692,7 +773,7 @@ export function initializePlaylistPage() {
 
         activePlaylist.tracks[trackIndex] = {
             ...normalizedTrack,
-            image: artwork,
+            image,
         }
     }
 
@@ -706,20 +787,108 @@ export function initializePlaylistPage() {
                 return
             }
 
-            hydrateImageWithTrackArtwork({
-                imageElement,
-                track,
-                audioService,
-            })
+            const filePath = getPlaylistTrackFilePath(track)
+            const cachedArtwork = getCachedTrackArtwork(track)
+            if (cachedArtwork) {
+                imageElement.src = cachedArtwork
+                rememberActivePlaylistTrackArtwork(trackIndex, cachedArtwork)
+                return
+            }
+
+            if (!filePath) {
+                return
+            }
+
+            let artworkPromise = getTrackArtworkResolvePromise(filePath)
+            if (!artworkPromise) {
+                artworkPromise = hydrateImageWithTrackArtwork({
+                    imageElement,
+                    track,
+                    audioService,
+                })
+                setTrackArtworkResolvePromise(filePath, artworkPromise)
+            }
+
+            artworkPromise
                 .then((artwork) => {
-                    if (!artwork) {
+                    clearTrackArtworkResolvePromise(filePath)
+                    const image = rememberTrackArtwork(filePath, artwork)
+                    if (!image) {
                         return
                     }
 
-                    rememberActivePlaylistTrackArtwork(trackIndex, artwork)
+                    if (imageElement.isConnected) {
+                        imageElement.src = image
+                    }
+                    rememberActivePlaylistTrackArtwork(trackIndex, image)
+                    schedulePlaylistArtworkPersist()
                 })
-                .catch(() => {})
+                .catch(() => {
+                    clearTrackArtworkResolvePromise(filePath)
+                })
         })
+    }
+
+    function buildTrackRecordForRender(track) {
+        const normalizedTrack = normalizeTrackRecord(track)
+        const cachedArtwork = getCachedTrackArtwork(normalizedTrack || track)
+
+        if (!normalizedTrack || !cachedArtwork || normalizedTrack.image === cachedArtwork) {
+            return normalizedTrack
+        }
+
+        return {
+            ...normalizedTrack,
+            image: cachedArtwork,
+        }
+    }
+
+    function cancelPendingArtworkHydration() {
+        if (artworkHydrationHandle !== null) {
+            if (
+                artworkHydrationUsesIdleCallback &&
+                typeof window.cancelIdleCallback === 'function'
+            ) {
+                window.cancelIdleCallback(artworkHydrationHandle)
+            } else {
+                window.clearTimeout(artworkHydrationHandle)
+            }
+        }
+
+        artworkHydrationHandle = null
+        artworkHydrationUsesIdleCallback = false
+        pendingArtworkRows.clear()
+    }
+
+    function flushPendingArtworkHydration() {
+        artworkHydrationHandle = null
+        artworkHydrationUsesIdleCallback = false
+
+        const rows = Array.from(pendingArtworkRows).filter((row) => row.isConnected)
+        pendingArtworkRows.clear()
+        hydrateTrackArtworkRows(rows)
+    }
+
+    function scheduleTrackArtworkHydration(rows) {
+        rows.forEach((row) => {
+            if (row?.isConnected) {
+                pendingArtworkRows.add(row)
+            }
+        })
+
+        if (!pendingArtworkRows.size || artworkHydrationHandle !== null) {
+            return
+        }
+
+        if (typeof window.requestIdleCallback === 'function') {
+            artworkHydrationUsesIdleCallback = true
+            artworkHydrationHandle = window.requestIdleCallback(flushPendingArtworkHydration, {
+                timeout: 600,
+            })
+            return
+        }
+
+        artworkHydrationHandle = window.setTimeout(flushPendingArtworkHydration, 80)
     }
 
     function applyRowDecorations(rows) {
@@ -736,11 +905,12 @@ export function initializePlaylistPage() {
                 selector: '.playlistTrackCover',
             })
         })
-        hydrateTrackArtworkRows(rows)
+        scheduleTrackArtworkHydration(rows)
     }
 
     function resetVirtualRows() {
         cancelPendingDurationCellUpdates()
+        cancelPendingArtworkHydration()
         virtualRowCache.clear()
         paddingTopRow = null
         paddingBottomRow = null
@@ -792,7 +962,7 @@ export function initializePlaylistPage() {
             return { node: cached.node, created: false }
         }
 
-        const normalizedTrack = normalizeTrackRecord(track)
+        const normalizedTrack = buildTrackRecordForRender(track)
         const node = renderTrackRow({
             index,
             track,
@@ -831,7 +1001,6 @@ export function initializePlaylistPage() {
         const tracks = activePlaylist?.tracks || []
 
         if (!tracks.length) {
-            // Render a single empty-row node instead of string HTML
             resetVirtualRows()
             renderedTrackIndexes = new Set()
             activeRenderedMode = 'empty'
@@ -959,7 +1128,7 @@ export function initializePlaylistPage() {
             const nextRenderedTrackIndexes = new Set()
             for (let i = 0; i < tracks.length; i++) {
                 const track = tracks[i]
-                const normalizedTrack = normalizeTrackRecord(track)
+                const normalizedTrack = buildTrackRecordForRender(track)
                 const duration = getTrackDurationFromRecord(normalizedTrack)
                 const row = renderTrackRow({
                     index: i,
@@ -974,7 +1143,6 @@ export function initializePlaylistPage() {
             }
 
             renderedTrackIndexes = nextRenderedTrackIndexes
-            // replace tbody content with constructed fragment
             body.replaceChildren(fragment)
             applyRowDecorations(renderedRows)
         }
@@ -1085,6 +1253,7 @@ export function initializePlaylistPage() {
     async function hydrate() {
         try {
             window.loader?.show({ text: 'Loading playlists...', count: 8, variant: 'playlist' })
+            await waitForPlaylistSkeletonPaint()
             try {
                 await loadPlaylistVirtualCore()
             } catch (error) {
@@ -1097,8 +1266,8 @@ export function initializePlaylistPage() {
             const loadedPlaylists = await sessionService.loadUserPlaylists()
 
             playlists = Array.isArray(loadedPlaylists) ? loadedPlaylists : []
-
-            // window.loader?.setMessage('Preparing playlist...')
+            primePlaylistDurationCache(playlists)
+            primePlaylistArtworkCache(playlists)
 
             if (!activePlaylistId && playlists.length > 0) {
                 activePlaylistId = playlists[0].id
@@ -1114,12 +1283,6 @@ export function initializePlaylistPage() {
             setActivePlaylistState(activePlaylistId)
 
             render()
-
-            // window.loader?.setMessage('Finalizing...')
-
-            if (PLAYLIST_SKELETON_TEST_DELAY_MS > 0) {
-                await new Promise((resolve) => setTimeout(resolve, PLAYLIST_SKELETON_TEST_DELAY_MS))
-            }
 
             window.loader?.hide()
         } catch (err) {
@@ -1178,7 +1341,15 @@ export function initializePlaylistPage() {
     })
 
     const onPlaylistsUpdated = () => {
-        if (isSavingPlaylistOrder || isSavingPlaylistImage || isSavingPlaylistCover) return
+        if (
+            isSavingPlaylistOrder ||
+            isSavingPlaylistImage ||
+            isSavingPlaylistCover ||
+            isPlaylistDurationPersisting() ||
+            isPlaylistArtworkPersisting()
+        ) {
+            return
+        }
         if (isRouteActive(['playlist', 'queue'])) {
             hydrate()
         }
@@ -1188,13 +1359,13 @@ export function initializePlaylistPage() {
         applyNowPlayingHighlight()
     })
     window.addEventListener('user-playlists:updated', onPlaylistsUpdated)
-    // Attach global undo shortcut for this page (Ctrl+Z)
     attachUndoShortcut()
     observePlaylistLayoutForScrollMargin()
 
     const cleanup = () => {
         totalDurationRunId += 1
         cancelPendingDurationCellUpdates()
+        cancelPendingArtworkHydration()
         if (typeof unsubscribePlayerState === 'function') {
             unsubscribePlayerState()
         }
