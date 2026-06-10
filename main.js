@@ -639,20 +639,42 @@ ipcMain.handle(
 
 ipcMain.handle(
     'playlist:savePlaybackPosition',
-    async (event, { currentTrackIndex, playbackPosition }) => {
+    async (
+        event,
+        { currentTrackIndex, currentTrackPath, currentTrackOccurrence, playbackPosition } = {},
+    ) => {
         if (!settingsStore) {
             return false
         }
 
         try {
             const playlist = settingsStore.get('recentPlaylist', [])
-            const approvedCurrentTrackIndex =
+
+            let approvedCurrentTrackIndex = -1
+
+            // Prefer resolving by renderer-provided track path (and optional occurrence)
+            if (currentTrackPath && Array.isArray(playlist)) {
+                if (Number.isInteger(currentTrackOccurrence) && currentTrackOccurrence >= 1) {
+                    approvedCurrentTrackIndex = findNthOccurrenceIndex(
+                        playlist,
+                        currentTrackPath,
+                        currentTrackOccurrence,
+                    )
+                } else {
+                    approvedCurrentTrackIndex = playlist.indexOf(currentTrackPath)
+                }
+            }
+
+            // Fall back to numeric index if no path match available
+            if (
+                approvedCurrentTrackIndex < 0 &&
                 Number.isInteger(currentTrackIndex) &&
                 Array.isArray(playlist) &&
                 currentTrackIndex >= 0 &&
                 currentTrackIndex < playlist.length
-                    ? currentTrackIndex
-                    : -1
+            ) {
+                approvedCurrentTrackIndex = currentTrackIndex
+            }
 
             settingsStore.set('recentPlaylistIndex', approvedCurrentTrackIndex)
             settingsStore.set(

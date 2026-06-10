@@ -160,8 +160,21 @@ export const audioService = (() => {
             ? Number(positionOverride)
             : Number(currentSound?.seek?.() || 0)
 
+        const currentTrackPath = playlist[currentTrackIndex]
+        let currentTrackOccurrence = 0
+        if (currentTrackPath && Array.isArray(playlist)) {
+            currentTrackOccurrence = playlist
+                .slice(0, currentTrackIndex + 1)
+                .reduce((count, filePath) => (filePath === currentTrackPath ? count + 1 : count), 0)
+        }
+
         if (typeof sessionService.savePlaybackPosition === 'function') {
-            sessionService.savePlaybackPosition(currentTrackIndex, Math.max(0, position))
+            sessionService.savePlaybackPosition(
+                currentTrackIndex,
+                Math.max(0, position),
+                currentTrackPath,
+                currentTrackOccurrence,
+            )
             return
         }
 

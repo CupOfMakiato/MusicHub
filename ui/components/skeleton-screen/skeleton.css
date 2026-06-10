@@ -15,7 +15,7 @@
 
     background: var(--skeleton-overlay-bg);
 
-    display: flex;
+    /* display: flex; */
     justify-content: center;
     align-items: flex-start;
     padding: 40px 16px;

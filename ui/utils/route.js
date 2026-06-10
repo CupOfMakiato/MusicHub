@@ -1,3 +1,4 @@
+// routing through pages
 export function getCurrentRoute(fallbackRoute = 'home') {
     const route = window.appRouter?.getCurrentRoute?.()
     if (typeof route === 'string' && route) {

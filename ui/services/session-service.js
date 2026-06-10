@@ -193,7 +193,12 @@ export const sessionService = (() => {
         }
     }
 
-    async function savePlaybackPosition(currentTrackIndex, playbackPosition = 0) {
+    async function savePlaybackPosition(
+        currentTrackIndex,
+        playbackPosition = 0,
+        currentTrackPath,
+        currentTrackOccurrence,
+    ) {
         if (!hasAPI('savePlaybackPosition')) {
             return false
         }
@@ -203,6 +208,10 @@ export const sessionService = (() => {
                 await window.electronAPI.savePlaybackPosition(
                     Number.isInteger(currentTrackIndex) ? currentTrackIndex : -1,
                     Math.max(0, Number(playbackPosition) || 0),
+                    typeof currentTrackPath === 'string' && currentTrackPath
+                        ? currentTrackPath
+                        : undefined,
+                    Number.isInteger(currentTrackOccurrence) ? currentTrackOccurrence : undefined,
                 ),
             )
         } catch (error) {

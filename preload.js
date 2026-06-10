@@ -13,9 +13,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     saveVolume: (volume) => ipcRenderer.invoke('settings:setVolume', volume),
     savePlaylist: (playlist, currentTrackIndex, playbackPosition = 0) =>
         ipcRenderer.invoke('playlist:save', { playlist, currentTrackIndex, playbackPosition }),
-    savePlaybackPosition: (currentTrackIndex, playbackPosition = 0) =>
+    savePlaybackPosition: (
+        currentTrackIndex,
+        playbackPosition = 0,
+        currentTrackPath,
+        currentTrackOccurrence,
+    ) =>
         ipcRenderer.invoke('playlist:savePlaybackPosition', {
             currentTrackIndex,
+            currentTrackPath,
+            currentTrackOccurrence,
             playbackPosition,
         }),
     loadPlaylist: () => ipcRenderer.invoke('playlist:load'),
