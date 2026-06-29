@@ -1,5 +1,5 @@
 import { getDataAttributeIndex, bindImageFallbacks } from '../../utils/dom-helpers.js'
-import { hydrateImageWithTrackArtwork } from '../../utils/artwork.js'
+import { resolveTrackArtwork } from '../../utils/artwork.js'
 import { normalizeTrackRecord } from '../../utils/track-record.js'
 import { getPlaylistTrackFilePath } from './playlist-duration-cache.js'
 import {
@@ -41,16 +41,30 @@ export function createPlaylistArtworkController({ getActivePlaylist, audioServic
             const trackIndex = getDataAttributeIndex(row, 'data-track-index')
             const imageElement = row.querySelector('.playlistTrackCover')
             const activePlaylist = getActivePlaylist?.()
+            const playlistId = activePlaylist?.id || null
             const track = trackIndex === null ? null : activePlaylist?.tracks?.[trackIndex]
             if (!track || !imageElement) {
                 return
             }
 
             const filePath = getPlaylistTrackFilePath(track)
+            const isCurrentTrack = () => {
+                const latestPlaylist = getActivePlaylist?.()
+                const latestTrack =
+                    trackIndex === null ? null : latestPlaylist?.tracks?.[trackIndex]
+
+                return (
+                    Boolean(playlistId) &&
+                    latestPlaylist?.id === playlistId &&
+                    getPlaylistTrackFilePath(latestTrack) === filePath
+                )
+            }
             const cachedArtwork = getCachedTrackArtwork(track)
             if (cachedArtwork) {
                 imageElement.src = cachedArtwork
-                rememberActivePlaylistTrackArtwork(trackIndex, cachedArtwork)
+                if (isCurrentTrack()) {
+                    rememberActivePlaylistTrackArtwork(trackIndex, cachedArtwork)
+                }
                 return
             }
 
@@ -60,26 +74,31 @@ export function createPlaylistArtworkController({ getActivePlaylist, audioServic
 
             let artworkPromise = getTrackArtworkResolvePromise(filePath)
             if (!artworkPromise) {
-                artworkPromise = hydrateImageWithTrackArtwork({
-                    imageElement,
-                    track,
-                    audioService,
-                })
+                artworkPromise = resolveTrackArtwork(track, { audioService })
                 setTrackArtworkResolvePromise(filePath, artworkPromise)
             }
 
             artworkPromise
                 .then((artwork) => {
                     clearTrackArtworkResolvePromise(filePath)
-                    const image = rememberTrackArtwork(filePath, artwork)
+                    const image = normalizeArtworkValue(artwork)
                     if (!image) {
                         return
                     }
 
-                    if (imageElement.isConnected) {
-                        imageElement.src = image
+                    if (!isCurrentTrack()) {
+                        return
                     }
-                    rememberActivePlaylistTrackArtwork(trackIndex, image)
+
+                    const cachedImage = rememberTrackArtwork(filePath, image)
+                    if (!cachedImage) {
+                        return
+                    }
+
+                    if (imageElement.isConnected) {
+                        imageElement.src = cachedImage
+                    }
+                    rememberActivePlaylistTrackArtwork(trackIndex, cachedImage)
                     schedulePlaylistArtworkPersist()
                 })
                 .catch(() => {

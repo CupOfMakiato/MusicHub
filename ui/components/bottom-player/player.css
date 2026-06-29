@@ -104,6 +104,15 @@
     background: #f5f8fc;
 }
 
+#bottom-player #trackRepeatBtn.is-active {
+    color: #2563eb;
+    background: #e8f0ff;
+}
+
+#bottom-player #trackRepeatBtn.is-active:hover {
+    background: #dbeafe;
+}
+
 #bottom-player #playPauseBtn {
     width: 40px;
     height: 40px;

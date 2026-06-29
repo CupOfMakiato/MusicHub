@@ -271,9 +271,21 @@ export const audioService = (() => {
         }
     }
 
-    function playNextInQueue() {
+    function playNextInQueue({ reason = 'next' } = {}) {
         if (!state) return
-        const { currentTrackIndex, playlist } = state.getState()
+        const { currentTrackIndex, playlist, loopEnabled } = state.getState()
+
+        if (reason === 'ended' && loopEnabled && Number.isInteger(currentTrackIndex)) {
+            if (currentTrackIndex >= 0 && currentTrackIndex < playlist.length) {
+                playTrackAtIndex(currentTrackIndex, {
+                    autoplay: true,
+                    startAtSeconds: 0,
+                    addToRecentTracks: false,
+                })
+                return
+            }
+        }
+
         const nextIndex = currentTrackIndex + 1
         if (nextIndex >= playlist.length) {
             if (currentSound) {
@@ -360,7 +372,7 @@ export const audioService = (() => {
                 savePlaybackSnapshot()
                 stopPlaybackPersistTracking()
             },
-            onend: () => playNextInQueue(),
+            onend: () => playNextInQueue({ reason: 'ended' }),
             onseek: () => {
                 savePlaybackSnapshot()
             },
@@ -516,7 +528,7 @@ export const audioService = (() => {
         startPlaylist,
         startSingleTrack,
         togglePlayPause,
-        playNext: playNextInQueue,
+        playNext: (options = {}) => playNextInQueue(options),
         playPrevious: () => {
             playPrevious()
         },

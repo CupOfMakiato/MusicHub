@@ -29,6 +29,7 @@ export function initializePlayer() {
     const playPauseBtn = bottomPlayer.querySelector('#playPauseBtn')
     const prevBtn = bottomPlayer.querySelector('#prevBtn')
     const nextBtn = bottomPlayer.querySelector('#nextBtn')
+    const repeatBtn = bottomPlayer.querySelector('#trackRepeatBtn')
     const progressSlider = bottomPlayer.querySelector('#progressSlider')
     const currentTimeElement = bottomPlayer.querySelector('#currentTime')
     const durationElement = bottomPlayer.querySelector('#duration')
@@ -46,7 +47,7 @@ export function initializePlayer() {
     function updatePlayerUI(snapshot = latestSnapshot) {
         // console.log('updatePlayerUI triggered');
         latestSnapshot = snapshot || latestSnapshot
-        const { currentTrack, isPlaying, volume } = latestSnapshot
+        const { currentTrack, isPlaying, volume, loopEnabled } = latestSnapshot
         const title = currentTrack?.title || 'No song selected'
         const artist = currentTrack?.artist || 'Unknown artist'
         const image = currentTrack?.image || placeholderCover
@@ -68,6 +69,11 @@ export function initializePlayer() {
 
         if (volumeSlider) {
             volumeSlider.value = Number.isFinite(Number(volume)) ? Number(volume) : 0.7
+        }
+
+        if (repeatBtn) {
+            repeatBtn.classList.toggle('is-active', Boolean(loopEnabled))
+            repeatBtn.setAttribute('aria-pressed', String(Boolean(loopEnabled)))
         }
 
         const sound = audioService.getCurrentSound()
@@ -371,6 +377,12 @@ export function initializePlayer() {
         if (nextBtn) {
             nextBtn.addEventListener('click', () => {
                 audioService.playNext()
+            })
+        }
+
+        if (repeatBtn) {
+            repeatBtn.addEventListener('click', () => {
+                playerState.toggleLoopEnabled()
             })
         }
 
