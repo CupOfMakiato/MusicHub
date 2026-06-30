@@ -5,6 +5,19 @@ export const DEFAULT_TRACK_ARTIST = 'Unknown Artist'
 export const DEFAULT_TRACK_ALBUM = 'Unknown Album'
 export const DEFAULT_TRACK_IMAGE = ''
 
+function normalizeTrackImage(value) {
+    if (typeof value !== 'string') {
+        return DEFAULT_TRACK_IMAGE
+    }
+
+    const image = value.trim()
+    if (!image || image.startsWith('data:image/')) {
+        return DEFAULT_TRACK_IMAGE
+    }
+
+    return image
+}
+
 export function normalizeTrackRecord(track) {
     if (!track) {
         return null
@@ -37,7 +50,7 @@ export function normalizeTrackRecord(track) {
             typeof sourceTrack?.album === 'string' && sourceTrack.album.trim()
                 ? sourceTrack.album.trim()
                 : DEFAULT_TRACK_ALBUM,
-        image: typeof sourceTrack?.image === 'string' ? sourceTrack.image : DEFAULT_TRACK_IMAGE,
+        image: normalizeTrackImage(sourceTrack?.image),
     }
 
     if (typeof normalizedTrack.playedAt !== 'string') {

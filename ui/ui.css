@@ -1,5 +1,10 @@
 :root {
     --font-base: 'Rubik', sans-serif;
+    --cursor-auto: url('./assets/cursor-auto.png') 2 2, auto;
+    --cursor-pointer-clicked: url('./assets/cursor-pointer-clicked.png') 9 1, pointer;
+    --cursor-grab: url('./assets/cursor-drag.png') 10 10, grab;
+    --cursor-grabbing: url('./assets/cursor-drag-clicked.png') 10 10, grabbing;
+    --cursor-text: url('./assets/cursor-text.png') 1 10, text;
 }
 
 #coverImage {
@@ -15,6 +20,46 @@ body {
     margin: 0;
     overflow: hidden;
     font-family: var(--font-base);
+    cursor: var(--cursor-auto);
+}
+
+button:not(:disabled),
+a[href],
+summary,
+[role='button']:not([aria-disabled='true']) {
+    cursor: var(--cursor-pointer-clicked) !important;
+}
+
+button:disabled,
+[aria-disabled='true'] {
+    cursor: var(--cursor-auto) !important;
+}
+
+.cursor-auto {
+    cursor: var(--cursor-auto) !important;
+}
+
+.cursor-pointer-clicked {
+    cursor: var(--cursor-pointer-clicked) !important;
+}
+
+.cursor-grab {
+    cursor: var(--cursor-grab) !important;
+}
+
+.cursor-grabbing {
+    cursor: var(--cursor-grabbing) !important;
+}
+
+html.cursor-grabbing,
+html.cursor-grabbing *,
+body.cursor-grabbing,
+body.cursor-grabbing * {
+    cursor: var(--cursor-grabbing) !important;
+}
+
+.cursor-text {
+    cursor: var(--cursor-text) !important;
 }
 
 #app-scroll {

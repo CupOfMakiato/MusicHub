@@ -105,6 +105,30 @@
     margin: 4px 0;
 }
 
+.playlistMeta h2.is-editable {
+    border-radius: 6px;
+    cursor: text;
+    display: inline-block;
+    max-width: 100%;
+    outline: 2px solid transparent;
+    outline-offset: 3px;
+}
+
+.playlistMeta h2.is-editable:hover {
+    cursor:
+        url('../../assets/cursor-pointer-clicked.png') 7 7,
+        text !important;
+}
+
+.playlistMeta h2.is-editable:focus-visible,
+.playlistMeta h2.is-editing {
+    outline-color: #2563eb;
+}
+
+.playlistMeta h2.is-editing {
+    background: #eff6ff;
+}
+
 .playlistMeta p {
     margin: 0;
     color: #475467;
@@ -165,6 +189,51 @@
     position: relative;
     z-index: 1;
     height: 60px;
+    cursor:
+        url('../../assets/cursor-drag.png') 10 10,
+        grab;
+}
+
+.playlistTrackRow--dragging,
+.playlistTrackRow--fallbackDragging,
+.playlistTrackRow.sortable-chosen,
+.playlistTrackRow.sortable-drag {
+    cursor:
+        url('../../assets/cursor-drag-clicked.png') 10 10,
+        grabbing !important;
+}
+
+.playlistTrackRow--fallbackDragging,
+.sortable-fallback {
+    cursor:
+        url('../../assets/cursor-drag-clicked.png') 10 10,
+        grabbing !important;
+}
+
+/* .playlistTrackRow.isNowPlaying tr {
+    outline: 2px solid #5b8cff;
+    outline-offset: 2px;
+} */
+
+.playlistTrackRow.isNowPlaying td {
+    background: #f5f9fe;
+    box-shadow:
+        inset 0 2px 0 #5b8cff,
+        inset 0 -2px 0 #5b8cff;
+}
+
+.playlistTrackRow.isNowPlaying td:first-child {
+    box-shadow:
+        inset 2px 0 0 #5b8cff,
+        inset 0 2px 0 #5b8cff,
+        inset 0 -2px 0 #5b8cff;
+}
+
+.playlistTrackRow.isNowPlaying td:last-child {
+    box-shadow:
+        inset -2px 0 0 #5b8cff,
+        inset 0 2px 0 #5b8cff,
+        inset 0 -2px 0 #5b8cff;
 }
 
 .playlistTrackRow.is-menu-open {
@@ -226,10 +295,9 @@
     height: 34px;
     align-items: center;
     justify-content: center;
-    border: 1px solid #d6dbe3;
-    border-radius: 8px;
     background: transparent;
     color: #1f2937;
+    border: none;
     display: inline-flex;
     position: relative;
     cursor: pointer;

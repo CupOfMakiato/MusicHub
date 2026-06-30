@@ -55,8 +55,31 @@
         </button>
 
         <input type="range" id="volumeSlider" min="0" max="1" step="0.01" value="0.7" />
-        <button id="trackMenuBtn" type="button" aria-label="Track menu">
-            <i data-lucide="ellipsis"></i>
-        </button>
+        <div class="trackMenuHost">
+            <button
+                id="trackMenuBtn"
+                type="button"
+                aria-label="Track menu"
+                aria-haspopup="menu"
+                aria-expanded="false"
+            >
+                <i data-lucide="ellipsis"></i>
+            </button>
+
+            <div id="trackMenu" class="trackMenu" role="menu" hidden>
+                <button id="trackPropertiesBtn" class="trackMenuItem" type="button" role="menuitem">
+                    <i data-lucide="info"></i>
+                    Properties
+                </button>
+                <button id="trackEqualizerBtn" class="trackMenuItem" type="button" role="menuitem">
+                    <i data-lucide="settings-2"></i>
+                    Equalizer
+                </button>
+                <button id="trackTestBtn" class="trackMenuItem" type="button" role="menuitem">
+                    <i data-lucide="info"></i>
+                    Test
+                </button>
+            </div>
+        </div>
     </div>
 </div>
